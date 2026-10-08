@@ -2,11 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Oculus.Interaction;
-using Oculus.Interaction.HandGrab;
 
-[RequireComponent(typeof(BoxCollider), typeof(Rigidbody))]
-public class CreateSheet : MonoBehaviour
+public class CreateSheet : GrabbablePiece
 {
 
     private const float ZeroPlateFraction = 0.008f;
@@ -28,11 +25,6 @@ public class CreateSheet : MonoBehaviour
     private readonly Dictionary<int, List<CreateCube>> _byCol = new Dictionary<int, List<CreateCube>>();
     private readonly Dictionary<int, List<CreateCube>> _byRow = new Dictionary<int, List<CreateCube>>();
 
-    private BoxCollider _bounds;
-    private Rigidbody _body;
-    private Grabbable _grabbable;
-    private HandGrabInteractable _handGrab;
-    private OneGrabTranslateTransformer _slide;
 
     private Material _material;
     private SheetLabels _labels;
@@ -53,12 +45,7 @@ public class CreateSheet : MonoBehaviour
     private float _height;
     private float _baseY;
 
-    private bool _wasGrabbed;
-    private Vector3 _grabPos;
-    private Quaternion _grabRot;
-    private Vector3 _grabScale;
 
-    public IReadOnlyList<CreateCube> Cubes => _live;
     public int RowCount => rowMax - rowMin + 1;
     public int ColCount => colMax - colMin + 1;
     public float CellSize => _cellSize;
@@ -143,9 +130,6 @@ public class CreateSheet : MonoBehaviour
         int size = GroupSizeOn(columns);
         return LineOffset(columns, block * size) + BlockInset(columns);
     }
-
-    public Vector3 LocalOf(int visRow, int visCol) =>
-        new Vector3(LineCoord(true, visCol), 0f, LineCoord(false, visRow));
 
     public bool Contains(int visRow, int visCol) =>
         visRow >= rowMin && visRow <= rowMax && visCol >= colMin && visCol <= colMax;
@@ -429,32 +413,6 @@ public class CreateSheet : MonoBehaviour
         for (int i = 0; i < _live.Count; i++) _live[i].ClearHighlight();
     }
 
-    private bool _grabbedLook;
-    private Vector3 _restScale = Vector3.one;
-
-    public void SetGrabLook(bool on)
-    {
-        if (_grabbedLook == on) return;
-
-        if (on)
-        {
-            _restScale = transform.localScale;
-            transform.localScale = _restScale * Style.EngageScale;
-        }
-        else
-        {
-            transform.localScale = _restScale;
-        }
-
-        _grabbedLook = on;
-    }
-
-    public void ForgetGrabLook()
-    {
-        _grabbedLook = false;
-        _restScale = transform.localScale;
-    }
-
     public void SetCubeColliders(bool on)
     {
         for (int i = 0; i < _live.Count; i++)
@@ -463,15 +421,14 @@ public class CreateSheet : MonoBehaviour
 
     public void SetPickable(bool on)
     {
-        EnsureComponents();
-        if (_bounds != null) _bounds.enabled = on;
+        Bounds.enabled = on;
         SetCubeColliders(on);
     }
 
     private void FitBounds()
     {
-        EnsureComponents();
-        if (_live.Count == 0) { _bounds.size = Vector3.one * 1e-3f; return; }
+        BoxCollider bounds = Bounds;
+        if (_live.Count == 0) { bounds.size = Vector3.one * 1e-3f; return; }
 
         Bounds b = new Bounds(_live[0].transform.localPosition, Vector3.zero);
         for (int i = 0; i < _live.Count; i++)
@@ -479,112 +436,8 @@ public class CreateSheet : MonoBehaviour
             CreateCube c = _live[i];
             b.Encapsulate(new Bounds(c.transform.localPosition, c.transform.localScale));
         }
-        _bounds.center = b.center;
-        _bounds.size = b.size;
-    }
-
-    private void EnsureComponents()
-    {
-        if (_bounds == null) _bounds = GetComponent<BoxCollider>();
-        if (_body == null)
-        {
-            _body = GetComponent<Rigidbody>();
-            _body.isKinematic = true;
-            _body.useGravity = false;
-        }
-        if (_grabbable == null) _grabbable = GetComponentInChildren<Grabbable>(true);
-        if (_grabbable != null && _grabbable.Transform == null)
-            _grabbable.InjectOptionalTargetTransform(_grabbable.transform);
-        if (_handGrab == null) _handGrab = GetComponentInChildren<HandGrabInteractable>(true);
-        if (_slide == null) _slide = GetComponent<OneGrabTranslateTransformer>();
-    }
-
-    public bool IsGrabbed
-    {
-        get
-        {
-            EnsureComponents();
-            return _grabbable != null && _grabbable.SelectingPointsCount > 0;
-        }
-    }
-
-    public bool PollGrabRelease(out Vector3 prePos, out Quaternion preRot, out Vector3 preScale)
-    {
-        prePos = Vector3.zero;
-        preRot = Quaternion.identity;
-        preScale = Vector3.one;
-
-        bool grabbed = IsGrabbed;
-        if (grabbed == _wasGrabbed) return false;
-        _wasGrabbed = grabbed;
-
-        if (grabbed)
-        {
-            _grabPos = transform.localPosition;
-            _grabRot = transform.localRotation;
-            _grabScale = transform.localScale;
-            return false;
-        }
-
-        prePos = _grabPos;
-        preRot = _grabRot;
-        preScale = _grabScale;
-        return true;
-    }
-
-    public bool ForceGrabRelease(out Vector3 prePos, out Quaternion preRot, out Vector3 preScale)
-    {
-        prePos = Vector3.zero;
-        preRot = Quaternion.identity;
-        preScale = Vector3.one;
-
-        if (!_wasGrabbed) return false;
-        _wasGrabbed = false;
-
-        prePos = _grabPos;
-        preRot = _grabRot;
-        preScale = _grabScale;
-        return true;
-    }
-
-    public void SetGrabbable(bool on)
-    {
-        EnsureComponents();
-        if (_grabbable != null) _grabbable.enabled = on;
-        if (_handGrab != null) _handGrab.enabled = on;
-    }
-
-    public string DescribeGrab()
-    {
-        EnsureComponents();
-        string g = _grabbable == null ? "null" : _grabbable.enabled.ToString();
-        string h = _handGrab == null ? "null" : _handGrab.enabled.ToString();
-        string b = _bounds == null ? "null" : $"{_bounds.enabled} {_bounds.size:F2}";
-        return $"id={sheetId} rows={rowMin}-{rowMax} cols={colMin}-{colMax} " +
-               $"grabbable={g} handGrab={h} slide={_slide != null} " +
-               $"points={(_grabbable == null ? -1 : _grabbable.MaxGrabPoints)} " +
-               $"bounds={b} kinematic={(_body == null ? "null" : _body.isKinematic.ToString())} " +
-               $"active={gameObject.activeInHierarchy} layer={gameObject.layer}";
-    }
-
-    public void SetOneGrab()
-    {
-        EnsureComponents();
-        if (_grabbable == null) return;
-
-        _grabbable.MaxGrabPoints = 1;
-        if (_slide != null) _grabbable.InjectOptionalOneGrabTransformer(_slide);
-    }
-
-    public void SetTwoGrab(ITransformer transformer)
-    {
-        EnsureComponents();
-        if (_grabbable == null || transformer == null) return;
-
-        _grabbable.MaxGrabPoints = 2;
-        _grabbable.InjectOptionalOneGrabTransformer(null);
-        _grabbable.InjectOptionalTwoGrabTransformer(transformer);
-        transformer.Initialize(_grabbable);
+        bounds.center = b.center;
+        bounds.size = b.size;
     }
 
     private CreateCube Acquire(int index)

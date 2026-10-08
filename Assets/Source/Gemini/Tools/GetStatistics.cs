@@ -3,6 +3,9 @@ using Google.GenAI.Types;
 
 public sealed class GetStatistics : AgenticTool<GetStatistics.Args> {
 
+    // Offered only while the bar sheet is in the room.
+    public override bool IsAvailable() => Views.Sheet;
+
     public class Args {
         [Doc("A row: its name, or its 1-based position. Returns stats for that whole row."), Optional]
         public string row;

@@ -5,6 +5,9 @@ using Google.GenAI.Types;
 
 public sealed class DescribeDataset : AgenticTool<DescribeDataset.Args> {
 
+    // Offered only while the bar sheet is in the room.
+    public override bool IsAvailable() => Views.Sheet;
+
     private const int DefaultLines = 200;
     private const int MaxCharacters = 15000;
 

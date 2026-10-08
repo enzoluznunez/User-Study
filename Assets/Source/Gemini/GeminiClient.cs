@@ -23,7 +23,6 @@ public class GeminiClient : MonoBehaviour {
     private int _connectQueuedFrame = -1;
     private GeminiStatus _lastStatus = GeminiStatus.Off;
 
-    public bool Ready => _ready;
     public bool Active => _active;
     public event Action<bool> ActiveChanged;
     public event Action<GeminiStatus> StatusChanged;

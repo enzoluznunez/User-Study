@@ -5,6 +5,9 @@ using UnityEngine;
 
 public sealed class DescribeSheet : AgenticTool {
 
+    // Offered only while the bar sheet is in the room.
+    public override bool IsAvailable() => Views.Sheet;
+
     public override FunctionDeclaration Declaration => new FunctionDeclaration {
         Name = "DescribeSheet",
         Description = "Read the sheet's shape and placement. Returns 'rows' and 'columns', its titles in display " +

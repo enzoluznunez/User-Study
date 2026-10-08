@@ -43,7 +43,7 @@ public abstract class AgenticTool : Function {
             try {
                 AgentTurn.NoteToolCall();
                 Scene.Sort?.CompleteOrderSequence();
-                editsBefore = ManageDatasets.ActiveEdits != null ? ManageDatasets.ActiveEdits.Count : 0;
+                editsBefore = EditList.Active.Count;
                 refreshedAxes = 0;
                 Run(args ?? new Dictionary<string, object>(), result);
             }
@@ -56,7 +56,7 @@ public abstract class AgenticTool : Function {
                     if ((refreshedAxes & 1) != 0) StalePositions.Clear(false);
                     if ((refreshedAxes & 2) != 0) StalePositions.Clear(true);
                 }
-                editsAfter = ManageDatasets.ActiveEdits != null ? ManageDatasets.ActiveEdits.Count : 0;
+                editsAfter = EditList.Active.Count;
                 StateChannel.InAgentCall = false;
                 string did = StateChannel.TakeAgentBatch();
                 if (!string.IsNullOrEmpty(did)) result["did"] = did;
@@ -91,7 +91,6 @@ public abstract class AgenticTool : Function {
         catch (Exception e) { return "<unserializable: " + e.Message + ">"; }
     }
 
-    protected static Schema ParametersFor(System.Type args) => ToolArguments.Schema(args);
 
     // There is one sheet, so there is nothing to pick: the bounds are its bounds.
     // The one answer to "which sheet do tools act on". Both helpers below go
@@ -273,7 +272,7 @@ public abstract class AgenticTool : Function {
     }
 
     protected static bool RunGrouped(int count, Func<int, bool> act) {
-        var edits = ManageDatasets.ActiveEdits;
+        var edits = EditList.Active;
         if (count > 1) edits.OpenGroup();
         try {
             for (int i = 0; i < count; i++)
@@ -281,13 +280,6 @@ public abstract class AgenticTool : Function {
         }
         finally { edits.CloseGroup(); }
         return true;
-    }
-
-    protected static void NeedChoice(Dictionary<string, object> result, string what,
-        IReadOnlyList<string> options, string message) {
-        result["needsChoice"] = what;
-        if (options != null && options.Count > 0) result["options"] = new List<object>(options);
-        result["message"] = message;
     }
 
     protected static bool TitleExistsOnAxis(string token, bool columns) {
@@ -363,13 +355,6 @@ public abstract class AgenticTool : Function {
         return false;
     }
 
-    protected readonly struct PiecePose {
-        public readonly UnityEngine.Vector3 pos;
-        public readonly UnityEngine.Quaternion rot;
-        public readonly UnityEngine.Vector3 scale;
-        public PiecePose(UnityEngine.Transform t) { pos = t.localPosition; rot = t.localRotation; scale = t.localScale; }
-    }
-
     protected static bool TryResolveSheet(Dictionary<string, object> result,
         string verb, out ManageSheets mgr, out CreateSheet sheet) {
         mgr = Scene.Sheets;
@@ -378,14 +363,79 @@ public abstract class AgenticTool : Function {
         return true;
     }
 
-    protected static PiecePose ApplyPieceTransform(ManageSheets mgr, CreateSheet sheet, Action<UnityEngine.Transform> mutate) {
-        mgr.CompletePieceMotion(sheet);
-        UnityEngine.Transform t = sheet.transform;
-        var pre = new PiecePose(t);
-        mutate(t);
-        mgr.NotifyMoveCommitted(sheet, pre.pos, pre.rot, pre.scale);
-        mgr.AnimatePieceFrom(sheet, pre.pos, pre.rot, pre.scale);
-        return pre;
+    protected static bool TryResolveGraph(Dictionary<string, object> result, string verb, out ManageGraph graph, out GraphView view) {
+        graph = Scene.Graph;
+        view = graph != null ? graph.View : null;
+        if (view == null || !view.IsBuilt) { result["error"] = $"The graph is not ready to {verb}; has the data loaded?"; return false; }
+        return true;
+    }
+
+    // A filer or security drawn on the graph, by the name the user said, its
+    // CIK or CUSIP, or its id. Hidden ones answer too: they are what a filter
+    // brings back. Several matches ask the user which, listing them.
+    protected static bool TryResolveNode(string token, Dictionary<string, object> result, out string id) {
+        id = null;
+        ManageGraph graph = Scene.Graph;
+        HoldingsData data = graph != null ? graph.Data : null;
+        if (data == null) { result["error"] = "The holdings have not loaded yet."; return false; }
+        if (string.IsNullOrWhiteSpace(token)) { result["error"] = "Name a filer or a security."; return false; }
+
+        var drawn = new List<(string id, string name, string key)>();
+        foreach (Filer f in graph.DrawnFilers) drawn.Add((f.Id, f.Name, $"CIK {f.Cik}"));
+        foreach (Security s in graph.DrawnSecurities) drawn.Add((s.Id, s.DisplayName, $"CUSIP {s.Cusip}"));
+
+        if (data.TryGetFiler(token, out Filer byKey)) id = byKey.Id;
+        else if (data.TryGetSecurity(token, out Security bySecurity)) id = bySecurity.Id;
+        if (id != null) {
+            if (graph.IsDrawn(id)) return true;
+            result["error"] = $"{graph.NameOf(id)} is in the data but not drawn on the graph; the data tools can still read it.";
+            id = null;
+            return false;
+        }
+
+        var found = NameMatch.Best(drawn, token, n => n.name);
+        if (found.Count == 1) { id = found[0].id; return true; }
+        if (found.Count > 1) {
+            NeedChoice(result, "node", found.ConvertAll(n => $"{n.name} ({n.key})"),
+                $"More than one node matches '{token.Trim()}'. Ask the user which, then call again with the " +
+                "CIK or CUSIP in brackets, which is unique.");
+            return false;
+        }
+
+        bool inData = NameMatch.Best(data.Filers, token, f => f.Name).Count > 0 ||
+                      NameMatch.Best(data.Securities, token, x => x.DisplayName).Count > 0;
+        result["error"] = inData
+            ? $"'{token.Trim()}' is in the data but not drawn on the graph; the data tools can still read it."
+            : $"Nothing on the graph matches '{token.Trim()}'. FindEntity looks names up.";
+        return false;
+    }
+
+    // The view a Move, Rotate or Scale call acts on, sheet or graph alike,
+    // once it has something built to move.
+    protected static bool TryResolvePiece(string viewArg, string verb, Dictionary<string, object> result, out IView view) {
+        if (!ResolveView(viewArg, result, out ViewKind kind)) { view = null; return false; }
+        view = Scene.ViewOf(kind);
+        if (view != null && view.HasPiece) return true;
+        result["error"] = $"The {Views.Name(kind)} is not ready to {verb}; has the data loaded?";
+        return false;
+    }
+
+    // Which view a call acts on. With one in the room it is that one, and
+    // 'view' may be left out; with both, the call has to say.
+    protected static bool ResolveView(string viewArg, Dictionary<string, object> result, out ViewKind view) {
+        if (!string.IsNullOrWhiteSpace(viewArg)) {
+            string v = viewArg.Trim().ToLowerInvariant();
+            if (v == "graph" && Views.Graph) { view = ViewKind.Graph; return true; }
+            if (v == "sheet" && Views.Sheet) { view = ViewKind.Sheet; return true; }
+            view = default;
+            result["error"] = Views.Both ? $"'view' must be 'graph' or 'sheet', not '{viewArg}'."
+                                         : $"There is no {v} in the room; only the {Views.Name(Views.Graph ? ViewKind.Graph : ViewKind.Sheet)}.";
+            return false;
+        }
+        if (Views.TrySingle(out view)) return true;
+        NeedChoice(result, "view", new List<string> { "graph", "sheet" },
+            "Both the graph and the sheet are in the room. Ask the user which they mean, then call again with 'view'.");
+        return false;
     }
 
     protected static bool ResolveAxis(string toolName, string axisArg, string inferFrom,
@@ -478,48 +528,24 @@ public abstract class AgenticTool : Function {
         return false;
     }
 
-    private struct MeasureAcc {
-        private double sum, best, worst;
-        private int n;
-
-        public void Add(double v) {
-            if (n == 0) { best = v; worst = v; }
-            else { if (v > best) best = v; if (v < worst) worst = v; }
-            sum += v;
-            n++;
-        }
-
-        public bool TryScore(string measure, out double score) {
-            score = 0d;
-            if (n == 0) return false;
-            switch (measure) {
-                case "sum": score = sum; return true;
-                case "average": score = sum / n; return true;
-                case "max": score = best; return true;
-                case "min": score = worst; return true;
-                default: return false;
-            }
-        }
-    }
-
     protected static bool TryLineMeasure(DataSource data, bool isColumn, int line,
         int crossMin, int crossMax, string measure, out double score) {
 
-        var acc = new MeasureAcc();
+        var acc = new ValueStats.Accumulator();
         for (int j = crossMin; j <= crossMax; j++)
             if (TryCellValue(data, isColumn ? j : line, isColumn ? line : j, out double v)) acc.Add(v);
-        return acc.TryScore(measure, out score);
+        return acc.TryMeasure(measure, out score);
     }
 
     protected static bool TryLineMeasure(DataSource data, bool isColumn, int line,
         IReadOnlyList<int> cross, string measure, out double score) {
 
-        var acc = new MeasureAcc();
+        var acc = new ValueStats.Accumulator();
         for (int k = 0; k < cross.Count; k++) {
             int j = cross[k];
             if (TryCellValue(data, isColumn ? j : line, isColumn ? line : j, out double v)) acc.Add(v);
         }
-        return acc.TryScore(measure, out score);
+        return acc.TryMeasure(measure, out score);
     }
 
     protected static string ActiveDatasetLabel() => Scene.DatasetLabel;

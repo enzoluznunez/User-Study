@@ -25,7 +25,7 @@ public class SheetLabels
     }
 
     private readonly Transform _owner;
-    private readonly List<TextMeshPro> _pool = new List<TextMeshPro>();
+    private readonly WorldLabelPool _pool;
     private readonly Dictionary<int, TextMeshPro> _colLabel = new Dictionary<int, TextMeshPro>();
     private readonly Dictionary<int, TextMeshPro> _rowLabel = new Dictionary<int, TextMeshPro>();
 
@@ -46,7 +46,6 @@ public class SheetLabels
     private float _textScale = 1f;
     private readonly Side _cols = new Side();
     private readonly Side _rows = new Side();
-    private Transform _root;
     private int _used;
     private bool _placed;
 
@@ -56,7 +55,11 @@ public class SheetLabels
     private float _highX;
     private float _margin;
 
-    public SheetLabels(Transform owner) => _owner = owner;
+    public SheetLabels(Transform owner)
+    {
+        _owner = owner;
+        _pool = new WorldLabelPool(owner, LabelBox, TextAlignmentOptions.Center, new Vector2(0.5f, 0.5f));
+    }
 
     public void FaceViewer(float dt)
     {
@@ -291,8 +294,7 @@ public class SheetLabels
             }
         }
 
-        for (int i = _used; i < _pool.Count; i++)
-            if (_pool[i] != null) _pool[i].gameObject.SetActive(false);
+        _pool.HideFrom(_used);
     }
 
     private TextMeshPro Place(string text, Vector3 localPosition, Color color, Quaternion facing,
@@ -300,7 +302,7 @@ public class SheetLabels
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
 
-        TextMeshPro label = Acquire(_used++);
+        TextMeshPro label = _pool.Get(_used++);
         if (label == null) return null;
 
         label.text = text;
@@ -313,35 +315,5 @@ public class SheetLabels
 
         label.gameObject.SetActive(true);
         return label;
-    }
-
-    private TextMeshPro Acquire(int index)
-    {
-        EnsureRoot();
-        if (_root == null) return null;
-
-        while (_pool.Count <= index)
-        {
-            GameObject go = new GameObject($"Label_{_pool.Count}");
-            go.transform.SetParent(_root, false);
-
-            TextMeshPro label = go.AddComponent<TextMeshPro>();
-            Style.ApplyBody(label);
-            label.alignment = TextAlignmentOptions.Center;
-            label.enableWordWrapping = false;
-            label.overflowMode = TextOverflowModes.Overflow;
-            label.rectTransform.sizeDelta = LabelBox;
-            _pool.Add(label);
-        }
-
-        return _pool[index];
-    }
-
-    private void EnsureRoot()
-    {
-        if (_root != null || _owner == null) return;
-        GameObject go = new GameObject("Labels");
-        _root = go.transform;
-        _root.SetParent(_owner, false);
     }
 }

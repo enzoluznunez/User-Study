@@ -47,9 +47,9 @@ public static class Gemini {
     private static int connectionCounter;
     private static int activeConnection;
     private static volatile string resumeHandle;
+    private static int toolRoundId;
 
     private static int toolRoundsThisTurn;
-    private static int toolRoundId;
     private static volatile bool resumedConnection;
     private static bool webSearchEnabled;
 
@@ -111,9 +111,7 @@ public static class Gemini {
     }
 
     private static Task<string> loadApiKey() {
-        var path = Application.streamingAssetsPath + "/gemini.key";
-        if (!path.Contains("://"))
-            path = "file://" + path;
+        var path = StreamingAssets.Url("gemini.key");
 
         var tcs = new TaskCompletionSource<string>();
         var req = UnityWebRequest.Get(path);

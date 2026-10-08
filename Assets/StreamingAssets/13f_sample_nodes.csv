@@ -1,0 +1,61 @@
+node_id,node_type,name,display_name,share_class,cusip,cusip_raw,filer_cik,accession_number,reported_portfolio_value_usd,reported_entries,filers_holding_in_sample,combined_value_in_sample_usd,x,y,z
+F00,filer,"RB Capital Management, LLC","RB Capital Management, LLC",,,,0001695582,0001695582-26-000003,512918426,205,,,-0.139,-0.0725,0.0864
+F01,filer,Cardinal Capital Management,Cardinal Capital Management,,,,0001434845,0001434845-26-000004,826307762,138,,,0.0588,0.3256,0.2871
+F02,filer,"Marietta Wealth Management, LLC","Marietta Wealth Management, LLC",,,,0001697847,0001697847-26-000006,970649393,133,,,0.2695,-0.195,-0.1523
+F03,filer,AMI ASSET MANAGEMENT CORP,AMI ASSET MANAGEMENT CORP,,,,0001369702,0001369702-26-000010,1736767939,99,,,0.0281,-0.0535,0.5327
+F04,filer,Hendershot Investments Inc.,Hendershot Investments Inc.,,,,0001541496,0001541496-26-000007,765513210,134,,,0.0471,0.3071,-0.0643
+F05,filer,PLANNING ALTERNATIVES LTD /ADV,PLANNING ALTERNATIVES LTD /ADV,,,,0000712011,0001765380-26-000365,932582905,129,,,-0.2936,0.149,-0.1007
+F06,filer,"Strategic Global Advisors, LLC","Strategic Global Advisors, LLC",,,,0001580212,0001580212-26-000004,701763723,129,,,0.3015,0.1327,-0.2069
+F07,filer,"Nippon Life Global Investors Americas, Inc.","Nippon Life Global Investors Americas, Inc.",,,,0001040190,0001172661-26-003132,2514286853,101,,,0.1834,-0.1237,0.1818
+F08,filer,"Sustainable Growth Advisers, LP","Sustainable Growth Advisers, LP",,,,0001290668,0001290668-26-000003,10190707647,87,,,0.1405,-0.3019,0.096
+F09,filer,"Gilbert & Cook, Inc.","Gilbert & Cook, Inc.",,,,0001675762,0001675762-26-000004,868950602,229,,,-0.159,-0.1584,-0.4914
+F10,filer,"Smith Group Asset Management, LLC","Smith Group Asset Management, LLC",,,,0001893134,0001893134-26-000003,2456005052,166,,,0.4789,0.1443,0.171
+F11,filer,"Alesco Advisors, LLC, An ESL Co","Alesco Advisors, LLC, An ESL Co",,,,0001269978,0001140361-26-031358,4364296517,230,,,-0.7407,-0.2608,-0.1995
+S00,security,Advanced Micro Devices Inc.,Advanced Micro Devices Inc.,,007903107,007903107,,,,,2,163367577,0.5549,-0.1538,0.3163
+S01,security,Alphabet Inc.,Alphabet Inc. Class C,C,02079K107,02079K107,,,,,3,934118799,-0.0948,-0.3739,0.1925
+S02,security,Alphabet Inc.,Alphabet Inc. Class A,A,02079K305,02079K305|02079k305,,,,,7,371025070,0.2063,0.1217,0.0151
+S04,security,Amazon.com Inc.,Amazon.com Inc.,,023135106,023135106,,,,,4,763098498,-0.0652,-0.2492,0.355
+S05,security,American Centy ETF Trust,American Centy ETF Trust,,025072604,025072604,,,,,1,23067189,0.4887,-0.4744,-0.1121
+S06,security,Apple Inc.,Apple Inc.,,037833100,037833100,,,,,10,1084075991,0.0794,0.0629,0.078
+S07,security,Bank Of Ny Mellon Corp,Bank Of Ny Mellon Corp,,064058100,064058100,,,,,1,19580194,-0.0341,0.5696,0.5033
+S08,security,Berkshire Hathaway Inc. Del,Berkshire Hathaway Inc. Del Class B,B,084670702,084670702,,,,,2,128290276,-0.2767,0.2612,0.1033
+S09,security,Booking Holdings Inc.,Booking Holdings Inc.,,09857L108,09857L108,,,,,1,31878224,0.1743,0.6456,-0.1414
+S10,security,Broadcom Inc.,Broadcom Inc.,,11135F101,11135F101|11135f101,,,,,6,815848291,0.4744,-0.1169,-0.014
+S12,security,Columbia ETF Trust Ii,Columbia ETF Trust Ii,,19762B202,19762B202,,,,,1,20710191,-0.4531,0.4553,-0.114
+S13,security,Comfort Sys Usa Inc.,Comfort Sys Usa Inc.,,199908104,199908104,,,,,1,102611497,0.7062,0.2524,0.4398
+S14,security,Costco Wholesale Corporation,Costco Wholesale Corporation,,22160K105,22160K105,,,,,2,34676538,-0.2444,0.1642,0.3462
+S15,security,Invesco Exch Traded Fd Trust Ii,Invesco Exch Traded Fd Trust Ii · S&P INTL MOMNT,,46138E222,46138E222,,,,,1,30369136,-0.546,0.359,0.0732
+S16,security,Invesco Exch Traded Fd Trust Ii,Invesco Exch Traded Fd Trust Ii · S&P 500 MOMNTM,,46138E339,46138E339,,,,,1,121373404,-0.4024,0.4753,-0.318
+S17,security,iShares Trust,iShares Trust · CORE S&P500 ETF,,464287200,464287200,,,,,3,1479665162,-0.47,-0.0845,-0.3595
+S18,security,iShares Trust,iShares Trust · RUS MID CAP ETF,,464287499,464287499,,,,,1,37567908,-0.1366,-0.0023,-0.822
+S19,security,iShares Trust,iShares Trust · CORE S&P MCP ETF,,464287507,464287507,,,,,2,515604255,-0.6505,0.079,-0.1468
+S20,security,iShares Trust,iShares Trust · CORE S&P SCP ETF,,464287804,464287804,,,,,2,380139710,-0.6241,-0.0159,0.0103
+S21,security,iShares Trust,iShares Trust · RUS TOP 200 ETF,,464289446,464289446,,,,,1,94030292,-0.171,-0.4898,-0.662
+S22,security,iShares Inc.,iShares Inc.,,46434G103,46434G103,,,,,1,190015246,-1.0,-0.1952,-0.3906
+S23,security,iShares Trust,iShares Trust · CORE MSCI INTL,,46435G326,46435G326,,,,,1,274408182,-1.0,-0.311,-0.0605
+S24,security,Jpmorgan Chase & Co,Jpmorgan Chase & Co,,46625H100,46625H100,,,,,1,19123601,0.1991,0.5997,0.4478
+S25,security,John Hancock Exchange Traded,John Hancock Exchange Traded · MULTIFACTOR MI,,47804J206,47804J206,,,,,1,75543904,-0.0391,-0.2946,-0.7994
+S26,security,John Hancock Exchange Traded,John Hancock Exchange Traded · MULTIFACTR SML,,47804J842,47804J842,,,,,1,35111748,-0.2811,-0.1783,-0.7898
+S27,security,Johnson & Johnson,Johnson & Johnson,,478160104,478160104,,,,,2,68485987,0.0074,0.599,0.1331
+S28,security,Kla Corp,Kla Corp,,482480100,482480100,,,,,1,137447309,0.851,0.1035,0.2211
+S29,security,Lam Research Corp,Lam Research Corp,,512807306,512807306,,,,,2,95375500,0.6217,0.2338,-0.1259
+S30,security,Eli Lilly & Co,Eli Lilly & Co,,532457108,532457108,,,,,3,179460660,0.1669,0.131,0.51
+S31,security,Microsoft Corp,Microsoft Corp,,594918104,594918104,,,,,4,739231850,0.2047,0.1818,0.2327
+S32,security,Micron Technology Inc.,Micron Technology Inc.,,595112103,595112103,,,,,1,22878028,0.4468,0.423,-0.3425
+S33,security,Nvidia Corporation,Nvidia Corporation,,67066G104,67066G104,,,,,7,1296267769,0.049,-0.0667,-0.2053
+S34,security,Palo Alto Networks Inc.,Palo Alto Networks Inc.,,697435105,697435105,,,,,1,67676561,-0.1431,0.1214,0.8147
+S35,security,Parker-Hannifin Corp,Parker-Hannifin Corp,,701094104,701094104,,,,,1,84950700,0.6998,0.4465,0.2192
+S36,security,Quanta Svcs Inc.,Quanta Svcs Inc.,,74762E102,74762e102,,,,,1,72959097,0.1485,0.0761,0.8546
+S37,security,State Str SPDR S&P 500 ETF T,State Str SPDR S&P 500 ETF T,,78462F103,78462F103,,,,,2,171690556,-0.4417,-0.2717,0.057
+S38,security,Schwab Strategic Trust,Schwab Strategic Trust,,808524870,808524870,,,,,1,171421067,-0.9321,-0.5652,-0.2269
+S39,security,Tjx Cos Inc. New,Tjx Cos Inc. New,,872540109,872540109,,,,,1,36197816,0.0217,0.6015,-0.2769
+S40,security,Taiwan Semiconductor Manufac,Taiwan Semiconductor Manufac,,874039100,874039100,,,,,1,93298175,-0.2168,-0.151,0.7854
+S41,security,Vanguard Bd Index Funds,Vanguard Bd Index Funds,,921937835,921937835,,,,,2,292211029,-0.4961,-0.3516,-0.4911
+S42,security,Vanguard Tax-Managed Funds,Vanguard Tax-Managed Funds,,921943858,921943858,,,,,2,177401215,-0.3088,0.1378,-0.475
+S43,security,Vanguard Index Funds,Vanguard Index Funds · MID CAP ETF,,922908629,922908629,,,,,1,26454277,0.2886,-0.5357,-0.2408
+S44,security,Vanguard Index Funds,Vanguard Index Funds · SMALL CP ETF,,922908751,922908751,,,,,1,21933447,0.4117,-0.3062,-0.4392
+S45,security,Visa Inc.,Visa Inc.,,92826C839,92826C839,,,,,1,494978002,0.0897,-0.735,0.144
+S46,security,Waste Mgmt Inc. Del,Waste Mgmt Inc. Del,,94106L109,94106L109,,,,,1,459500775,0.3392,-0.6564,0.2486
+S47,security,Sensata Technologies Hldg Pl,Sensata Technologies Hldg Pl,,G8060N102,G8060N102,,,,,1,20204682,0.5406,0.1134,-0.4415
+S48,security,Spotify Technology S A,Spotify Technology S A,,L8681T102,L8681T102,,,,,1,29535355,0.3666,0.2845,-0.5118
+S49,security,Asml Hldg Nv,Asml Hldg Nv,,N07059210,N07059210,,,,,1,22327485,0.5888,-0.2659,-0.2944

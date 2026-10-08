@@ -1,10 +1,16 @@
 using UnityEngine;
 
+// A hand tool. Each one can act on the bar sheet, the network graph, or both,
+// and listens to whichever views are in the room: a poke on a bar arrives as a
+// sheet event and a poke on a node as a graph event, so the view a hand touched
+// is the view the tool acts on, and nobody has to say which.
 public abstract class Tool : MonoBehaviour
 {
     public ManageTools toolManager;
     public ManageSheets sheetManager;
     public ReadSheets readSheets;
+    public ManageGraph graph;
+    public ReadGraph reader;
     public ToolPanelUI toolPanelUI;
 
     private bool _active;
@@ -14,6 +20,8 @@ public abstract class Tool : MonoBehaviour
     protected abstract ToolType Kind { get; }
 
     protected void Report(string what) => StateChannel.Record(Kind.ToString(), what);
+
+    // ----- The sheet -----
 
     protected virtual bool UsesSheetEvents => false;
 
@@ -41,12 +49,39 @@ public abstract class Tool : MonoBehaviour
         sheetManager.SetLineTint(reading.sheet, columns ? 1 : 2, lo, hi, swell);
     }
 
-    private bool _listening;
+    // ----- The graph -----
+
+    protected virtual bool UsesGraphEvents => false;
+
+    // Lights the node under the finger, the same for every tool that pokes nodes.
+    protected virtual void OnNodeHover(ReadGraph.Reading reading)
+    {
+        if (!Active || graph == null || !reading.valid) { ClearHover(); return; }
+        graph.SetHover(reading.node.Id);
+    }
+
+    protected virtual void OnNodeSelect(ReadGraph.Reading reading) { }
+
+    protected virtual void OnNodeRelease(ReadGraph.Reading reading) { }
+
+    protected virtual void OnNodeCommit(ReadGraph.Reading reading) { }
+
+    protected virtual void OnNodeCleared() => ClearHover();
+
+    protected void ClearHover()
+    {
+        if (graph != null) graph.SetHover(null);
+    }
+
+    // ----- Listening -----
+
+    private bool _listeningSheets;
+    private bool _listeningGraph;
 
     private void ListenSheets(bool on)
     {
-        if (readSheets == null || on == _listening) return;
-        _listening = on;
+        if (readSheets == null || on == _listeningSheets) return;
+        _listeningSheets = on;
         if (on)
         {
             readSheets.OnHover += OnSheetHover;
@@ -62,6 +97,28 @@ public abstract class Tool : MonoBehaviour
             readSheets.OnRelease -= OnSheetRelease;
             readSheets.OnCommit -= OnSheetCommit;
             readSheets.OnCleared -= OnSheetCleared;
+        }
+    }
+
+    private void ListenGraph(bool on)
+    {
+        if (reader == null || on == _listeningGraph) return;
+        _listeningGraph = on;
+        if (on)
+        {
+            reader.OnHover += OnNodeHover;
+            reader.OnSelect += OnNodeSelect;
+            reader.OnRelease += OnNodeRelease;
+            reader.OnCommit += OnNodeCommit;
+            reader.OnCleared += OnNodeCleared;
+        }
+        else
+        {
+            reader.OnHover -= OnNodeHover;
+            reader.OnSelect -= OnNodeSelect;
+            reader.OnRelease -= OnNodeRelease;
+            reader.OnCommit -= OnNodeCommit;
+            reader.OnCleared -= OnNodeCleared;
         }
     }
 
@@ -83,6 +140,9 @@ public abstract class Tool : MonoBehaviour
         if (sheetManager == null) sheetManager = FindAnyObjectByType<ManageSheets>();
         if (readSheets == null && sheetManager != null) readSheets = sheetManager.GetComponent<ReadSheets>();
         if (readSheets == null) readSheets = FindAnyObjectByType<ReadSheets>();
+        if (graph == null) graph = FindAnyObjectByType<ManageGraph>();
+        if (reader == null && graph != null) reader = graph.GetComponent<ReadGraph>();
+        if (reader == null) reader = FindAnyObjectByType<ReadGraph>();
         if (toolPanelUI == null) toolPanelUI = FindAnyObjectByType<ToolPanelUI>();
 
         OnToolStart();
@@ -105,6 +165,7 @@ public abstract class Tool : MonoBehaviour
             toolManager.OnToolReset -= HandleToolReset;
         }
         ListenSheets(false);
+        ListenGraph(false);
         OnToolDestroy();
     }
 
@@ -122,7 +183,8 @@ public abstract class Tool : MonoBehaviour
         if (_active == active) return;
         _active = active;
         if (!active) ClearToolState();
-        if (UsesSheetEvents) ListenSheets(active);
+        if (UsesSheetEvents && Views.Sheet) ListenSheets(active);
+        if (UsesGraphEvents && Views.Graph) ListenGraph(active);
         OnActiveChanged(active);
     }
 }

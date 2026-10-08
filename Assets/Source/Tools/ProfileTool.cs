@@ -1,5 +1,18 @@
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
+// Profiles one part of whichever view it is used on, and reports its count,
+// range, average and total on a card beside it.
+//
+// On the bar sheet it raises a whole row or column as a strip above the
+// sheet: press a bar, then sweep along the line you want.
+//
+// On the network graph it runs a breadth-first search out from the node you
+// poke, as many hops as the panel says: one hop is what a filer holds or who
+// holds a security, two is who else holds those, three is what they hold
+// besides. Reached nodes stay lit, fainter the further out; the rest dim. Poke
+// the profiled node again to let it go.
 public class ProfileTool : Tool
 {
     public float liftAboveMaximumHeight = 0f;
@@ -14,16 +27,23 @@ public class ProfileTool : Tool
     protected override ToolType Kind => ToolType.Profile;
 
     protected override bool UsesSheetEvents => true;
+    protected override bool UsesGraphEvents => true;
 
-    protected override void OnResetTool() => StatsTooltip.Hide();
+    protected override void OnResetTool()
+    {
+        StatsTooltip.Hide();
+        if (graph != null) graph.SetProfile(GraphProfile.None, out _);
+    }
 
     protected override void OnActiveChanged(bool active)
     {
         _pressed = false;
         _intent.Reset();
-        if (!active)
+        if (active) ShowGraphCard();
+        else
         {
             ClearTint();
+            ClearHover();
             StatsTooltip.Hide();
         }
     }
@@ -143,8 +163,8 @@ public class ProfileTool : Tool
         {
             title = title,
             stats = columns
-                ? SheetStats.Over(data, piece.rowMin, piece.rowMax, stripLo, stripHi)
-                : SheetStats.Over(data, line, line, colLo, colHi)
+                ? SheetStats.Over(data, piece.rowMin, piece.rowMax, stripLo, stripHi).AsValues()
+                : SheetStats.Over(data, line, line, colLo, colHi).AsValues()
         };
 
         ManageSheets sheets = sheetManager;
@@ -156,7 +176,7 @@ public class ProfileTool : Tool
             () => sheets != null && sheets.TryStripTopPoint(target, columns, line, lift, out Vector3 raised)
                 ? raised
                 : fallback,
-            selection);
+            selection, ViewKind.Sheet);
     }
 
     public bool ShowProfile(bool columns, int visRow, int visCol)
@@ -188,5 +208,113 @@ public class ProfileTool : Tool
             : DataSource.LabelAt(data, columns, line);
         Report($"projected {label}");
         return true;
+    }
+
+    // ----- The graph: a breadth-first search out from one node -----
+
+    private const string HopsRowName = "HopsRow";
+    private static readonly string[] HopLabels = { "1 Hop", "2 Hops", "3 Hops" };
+
+    private ButtonList _hopsRow;
+    private int _hops = 1;
+
+    // How far the next profile reaches. Changing it re-runs the one standing.
+    public int Hops => _hops;
+
+    protected override void OnToolStart()
+    {
+        if (graph != null) graph.OnStateChanged += ShowGraphCard;
+    }
+
+    protected override void OnToolDestroy()
+    {
+        if (graph != null) graph.OnStateChanged -= ShowGraphCard;
+    }
+
+    protected override void BuildPanelContent()
+    {
+        if (toolPanelUI == null || !Views.Graph) return;
+
+        var buttons = new (string, string, UnityEngine.Events.UnityAction)[HopLabels.Length];
+        for (int i = 0; i < HopLabels.Length; i++)
+        {
+            int hops = i + 1;
+            buttons[i] = ($"Hops_{hops}", HopLabels[i], () => OnHopsClicked(hops));
+        }
+        _hopsRow = toolPanelUI.AddToggleRow(Kind, HopsRowName, buttons);
+        _hopsRow?.SetSelected(_hops - 1);
+        toolPanelUI.ContentChanged();
+    }
+
+    private void OnHopsClicked(int hops)
+    {
+        _hops = hops;
+        _hopsRow?.SetSelected(hops - 1);
+        Report($"set the profile to reach {hops} hop{(hops == 1 ? "" : "s")} out");
+
+        // A profile already standing widens or narrows to match, as one edit.
+        if (graph != null && !graph.Profile.IsNone && graph.Profile.hops != hops)
+            ProfileNode(graph.Profile.root, hops, out _);
+    }
+
+    protected override void OnNodeCommit(ReadGraph.Reading reading)
+    {
+        if (!Active || graph == null || !reading.valid) return;
+
+        string id = reading.node.Id;
+        bool again = graph.Profile.root == id;
+        if (!ProfileNode(again ? null : id, _hops, out string refusal) && refusal != null)
+            Notices.Show(this, "Profile", refusal);
+    }
+
+    // The one way a graph profile changes, for the hand and the assistant
+    // alike: it records the edit and says what happened. A null id lets go.
+    public bool ProfileNode(string id, int hops, out string refusal)
+    {
+        refusal = null;
+        if (graph == null) { refusal = "The graph is not ready."; return false; }
+
+        GraphProfile before = graph.Profile;
+        GraphProfile after = id == null ? GraphProfile.None : new GraphProfile { root = id, hops = hops };
+        if (!graph.SetProfile(after, out refusal)) return false;
+
+        hops = graph.Profile.hops;
+        if (id != null && hops != _hops)
+        {
+            _hops = hops;
+            _hopsRow?.SetSelected(hops - 1);
+        }
+
+        EditList.Active.PushGraphProfile(before);
+        Report(id == null
+            ? $"let go of the profile of {graph.NameOf(before.root) ?? "the graph"}"
+            : $"profiled {graph.NameOf(id)} {hops} hop{(hops == 1 ? "" : "s")} out, reaching " +
+              $"{graph.ProfileHops.Count - 1} others");
+        return true;
+    }
+
+    // The positions inside the profile, summed and ranged, beside its root.
+    private void ShowGraphCard()
+    {
+        if (!Active || graph == null) return;
+
+        GraphProfile profile = graph.Profile;
+        if (profile.IsNone || graph.ProfileHops.Count == 0) { StatsTooltip.Hide(ViewKind.Graph); return; }
+
+        Tooltip tooltip = Scene.Tooltip;
+        if (tooltip == null) return;
+
+        List<double> values = graph.ProfileHoldings().Select(h => (double)h.Value).ToList();
+        int filers = graph.ProfileHops.Keys.Count(id => graph.View.NodeOf(id)?.IsFiler == true);
+        int securities = graph.ProfileHops.Count - filers;
+        string root = profile.root;
+
+        tooltip.ShowStats(() => graph.TryNodeWorldPosition(root, out Vector3 at) ? at : transform.position,
+            new Tooltip.SelectionStats
+            {
+                title = $"{GraphLabels.Shorten(graph.NameOf(root))} · {profile.hops} hop{(profile.hops == 1 ? "" : "s")}: " +
+                        $"{filers} filer{(filers == 1 ? "" : "s")}, {securities} securit{(securities == 1 ? "y" : "ies")}",
+                stats = ValueStats.Of(values)
+            }, ViewKind.Graph);
     }
 }

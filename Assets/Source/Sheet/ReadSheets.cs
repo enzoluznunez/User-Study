@@ -1,7 +1,6 @@
-using System;
 using UnityEngine;
 
-public class ReadSheets : MonoBehaviour
+public class ReadSheets : ReadHub<ReadSheets.Reading, SheetTouch>
 {
     public struct Reading
     {
@@ -18,57 +17,10 @@ public class ReadSheets : MonoBehaviour
         public Vector3 normal;
     }
 
-    public event Action<Reading> OnHover;
-    public event Action<Reading> OnSelect;
-    public event Action<Reading> OnRelease;
-    public event Action<Reading> OnCommit;
-    public event Action OnCleared;
+    protected override bool IsValid(Reading reading) => reading.valid;
 
-    public bool Listening => OnHover != null || OnSelect != null || OnRelease != null ||
-        OnCommit != null || OnCleared != null;
-
-    [Tooltip("Let a fingertip drive the sheet. Turn off only to take the sheet out of play.")]
-    public bool touchInput = true;
-
-    private CreateSheet _pressed;
-
-    private void Awake()
-    {
-        if (touchInput && GetComponent<SheetTouch>() == null) gameObject.AddComponent<SheetTouch>();
-    }
-
-    public void Hover(Reading reading)
-    {
-        if (!Listening) return;
-        OnHover?.Invoke(reading);
-    }
-
-    public void Select(Reading reading)
-    {
-        if (!Listening) return;
-
-        _pressed = reading.sheet;
-        OnSelect?.Invoke(reading);
-    }
-
-    public void Release(Reading reading)
-    {
-        if (!Listening) return;
-
-        bool commits = reading.valid && _pressed != null && _pressed == reading.sheet;
-        _pressed = null;
-
-        OnRelease?.Invoke(reading);
-        if (commits) OnCommit?.Invoke(reading);
-    }
-
-    public void Cleared()
-    {
-        if (!Listening) return;
-
-        _pressed = null;
-        OnCleared?.Invoke();
-    }
+    // A poke commits on the sheet it started on, wherever on it the bar is.
+    protected override UnityEngine.Object PressTarget(Reading reading) => reading.sheet;
 
     public static Reading Describe(CreateCube cube, Vector3 point) => new Reading
     {
@@ -82,9 +34,9 @@ public class ReadSheets : MonoBehaviour
         point = point
     };
 
-    public static Reading Describe(SheetRaycast.Hit hit, Vector3 tip, Vector3 wrist)
+    public static Reading Describe(PokeHit<CreateCube> hit, Vector3 tip, Vector3 wrist)
     {
-        Reading reading = Describe(hit.cube, hit.point);
+        Reading reading = Describe(hit.target, hit.point);
         reading.tip = tip;
         reading.wrist = wrist;
         reading.normal = hit.normal;

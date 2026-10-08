@@ -13,7 +13,7 @@ public static class Scene {
     private static ProfileTool profileTool;
     private static SortTool sortTool;
     private static ManageSheets sheetManager;
-    private static ReadSheets sheetReader;
+    private static ManageGraph graphManager;
     private static ManageDatasets manageDatasets;
     private static Tooltip tooltip;
 
@@ -27,7 +27,7 @@ public static class Scene {
     public static ProfileTool Profile => Resolve(ref profileTool);
     public static SortTool Sort => Resolve(ref sortTool);
     public static ManageSheets Sheets => Resolve(ref sheetManager);
-    public static ReadSheets Reader => Resolve(ref sheetReader);
+    public static ManageGraph Graph => Resolve(ref graphManager);
     public static ManageDatasets Datasets => ManageDatasets.Instance != null ? ManageDatasets.Instance : Resolve(ref manageDatasets);
     public static Tooltip Tooltip => Resolve(ref tooltip);
 
@@ -53,6 +53,17 @@ public static class Scene {
             return dataSource;
         }
     }
+
+    // Every view in the scene, the sheet's manager and the graph's. A view
+    // switched off has nothing built, so acting on it does nothing.
+    public static System.Collections.Generic.IEnumerable<IView> Views {
+        get {
+            if (Sheets != null) yield return Sheets;
+            if (Graph != null) yield return Graph;
+        }
+    }
+
+    public static IView ViewOf(ViewKind kind) => kind == ViewKind.Graph ? (IView)Graph : Sheets;
 
     private static T Resolve<T>(ref T cached) where T : Object {
         if (cached == null) cached = Object.FindAnyObjectByType<T>();

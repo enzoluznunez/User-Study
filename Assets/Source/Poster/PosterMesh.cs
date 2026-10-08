@@ -3,30 +3,16 @@ using UnityEngine;
 
 // Geometry for the poster figures, accumulated into one mesh per view.
 //
-// The sheet shader the rest of the app draws with is unlit and reads vertex
-// colour, so shading here is baked per vertex on the CPU rather than lit at
-// draw time: one fixed key direction, a little ambient. That keeps the figures
-// on the same material as the headset's cubes, and makes a capture reproducible
-// -- no scene light, no exposure, no pipeline settings to match.
+// Shading is baked per vertex (VertexLight) rather than lit at draw time, which
+// keeps the figures on the same material as the headset's views and makes a
+// capture reproducible -- no scene light, no exposure, no pipeline settings to
+// match.
 public class PosterMesh
 {
-    // Deliberately oblique rather than overhead: a surface whose normals all
-    // point roughly up takes almost no shading from a light above it, and the
-    // slope then reads only from the silhouette.
-    public static readonly Vector3 KeyDirection = new Vector3(-0.58f, 0.40f, -0.71f).normalized;
-
-    private const float Ambient = 0.30f;
-    private const float Key = 0.85f;
-
     private readonly List<Vector3> _verts = new List<Vector3>();
     private readonly List<Color> _colors = new List<Color>();
     private readonly List<int> _tris = new List<int>();
 
-    // Lambert wrapped into the ambient floor, so a face turned away from the key
-    // is dimmer but never black and the hue stays readable all round.
-    // The palette is hex, which is sRGB, but a vertex colour is handed to the
-    // shader unconverted and the project renders linear. Converting here is what
-    // keeps a captured band the same colour as the hex the pipeline sends.
     public static Color Shade(Color color, Vector3 normal) => Shade(color, normal, 1f);
 
     // The exposure argument is the second depth cue: geometry alone cannot tell
@@ -35,9 +21,8 @@ public class PosterMesh
     // how open to the sky a point is, and it multiplies the lighting.
     public static Color Shade(Color color, Vector3 normal, float exposure)
     {
-        Color linear = QualitySettings.activeColorSpace == ColorSpace.Linear ? color.linear : color;
-        float lambert = Mathf.Clamp01(Vector3.Dot(normal.normalized, KeyDirection));
-        float light = (Ambient + Key * lambert) * Mathf.Clamp01(exposure);
+        Color linear = VertexLight.ToLinear(color);
+        float light = VertexLight.Of(normal, exposure);
         return new Color(linear.r * light, linear.g * light, linear.b * light, color.a);
     }
 

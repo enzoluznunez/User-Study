@@ -2,6 +2,15 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+// Puts things in order on whichever view it is used on.
+//
+// On the bar sheet it reorders rows and columns: pinch a line beside its label,
+// or anywhere along it, and slide it into place.
+//
+// On the network graph there is no line to drag, so the panel arranges it
+// instead: filers in columns on the left and securities on the right, ordered
+// by value, by how many holdings they have, or by name; Layout puts every node
+// back where the data's own layout has it.
 public class SortTool : Tool
 {
     public float reflowSmoothing = 18f;
@@ -21,11 +30,13 @@ public class SortTool : Tool
     protected override void OnToolStart()
     {
         if (sheetManager != null) sheetManager.OnSheetsChanged += RebuildProxies;
+        if (graph != null) graph.OnStateChanged += LightArrangement;
     }
 
     protected override void OnToolDestroy()
     {
         if (sheetManager != null) sheetManager.OnSheetsChanged -= RebuildProxies;
+        if (graph != null) graph.OnStateChanged -= LightArrangement;
         CompleteOrderSequence();
         CancelDrag();
         ClearProxies();
@@ -40,6 +51,8 @@ public class SortTool : Tool
         if (sheetManager != null) sheetManager.SuppressNextReflow();
         Scene.Data?.ResetOrder();
         RebuildProxies();
+        if (graph != null) graph.SetOrder(GraphOrder.Layout);
+        LightArrangement();
     }
 
     protected override void OnActiveChanged(bool active)
@@ -226,7 +239,7 @@ public class SortTool : Tool
             if (preBlocks[i] != targetBlocks[i]) changed++;
         LastReorderedLines = changed;
 
-        ManageDatasets.ActiveEdits.PushReorder(columns, preOrder, preMode, changed);
+        EditList.Active.PushReorder(columns, preOrder, preMode, changed);
         Report($"set the order of {changed} {DataSource.GroupNoun(src, columns)}s");
 
         var final = new List<int>(targetOrder);
@@ -345,7 +358,7 @@ public class SortTool : Tool
 
         if (StateChannel.UserDriven) StalePositions.MarkDirty(columns);
 
-        ManageDatasets.ActiveEdits.PushSort(columns, preOrder, preMode, from, to);
+        EditList.Active.PushSort(columns, preOrder, preMode, from, to);
 
         if (columns) src.MoveColumn(from * size, to * size);
         else src.MoveRow(from, to);
@@ -377,5 +390,51 @@ public class SortTool : Tool
         int p = slot > from ? slot - 1 : slot;
         if (p >= target) p += 1;
         return p;
+    }
+
+    // ----- The graph: arranging it -----
+
+    private const string ArrangeRowName = "ArrangeRow";
+    private static readonly GraphOrder[] Orders = { GraphOrder.Layout, GraphOrder.Value, GraphOrder.Holders, GraphOrder.Name };
+    private static readonly string[] OrderLabels = { "Layout", "Value", "Holdings", "Name" };
+
+    private ButtonList _arrangeRow;
+
+    protected override void BuildPanelContent()
+    {
+        if (toolPanelUI == null || !Views.Graph) return;
+
+        var buttons = new (string, string, UnityEngine.Events.UnityAction)[Orders.Length];
+        for (int i = 0; i < Orders.Length; i++)
+        {
+            GraphOrder order = Orders[i];
+            buttons[i] = ($"Arrange_{order}", OrderLabels[i], () => Arrange(order));
+        }
+        _arrangeRow = toolPanelUI.AddToggleRow(Kind, ArrangeRowName, buttons);
+        LightArrangement();
+        toolPanelUI.ContentChanged();
+    }
+
+    private void LightArrangement()
+    {
+        if (_arrangeRow == null || graph == null) return;
+        _arrangeRow.SetSelected(System.Array.IndexOf(Orders, graph.Order));
+    }
+
+    // The one way the graph's arrangement changes, for the hand and the
+    // assistant alike: one edit on the timeline, and a line saying what it did.
+    public bool Arrange(GraphOrder order)
+    {
+        if (graph == null) return false;
+
+        GraphOrder before = graph.Order;
+        if (!graph.SetOrder(order)) { LightArrangement(); return false; }
+
+        EditList.Active.PushGraphOrder(before);
+        LightArrangement();
+        Report(order == GraphOrder.Layout
+            ? "put the graph back in its own layout"
+            : $"sorted the graph by {ManageGraph.OrderName(order)}, filers on the left and securities on the right");
+        return true;
     }
 }

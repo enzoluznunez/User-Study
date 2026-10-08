@@ -5,7 +5,13 @@ using UnityEngine;
 public sealed class CallSortTool : AgenticTool<CallSortTool.Args> {
 
     public class Args {
-        [Doc("Set the whole order at once: the rows or columns in the sequence you want them, each a name or its " +
+        [Doc("Which view to sort, when both the graph and the sheet are in the room."), Values("graph", "sheet"), Optional]
+        public string view;
+        [Doc("Graph: how to arrange it. 'value', 'holders' and 'name' stand filers in ranked columns on the left " +
+             "and securities on the right, largest or first at the top; 'layout' puts every node back where the " +
+             "data placed it."), Values("layout", "value", "holders", "name"), Optional]
+        public string arrange;
+        [Doc("Sheet: set the whole order at once: the rows or columns in the sequence you want them, each a name or its " +
              "1-based current position. Name them all for a full reorder, or name only the ones to bring to the " +
              "front and the rest keep their current order behind them."), Optional]
         public string[] order;
@@ -36,7 +42,9 @@ public sealed class CallSortTool : AgenticTool<CallSortTool.Args> {
 
     public override FunctionDeclaration Declaration => new FunctionDeclaration {
         Name = "CallSortTool",
-        Description = "Reorder the rows or columns. Pass 'axis' when the names you give do not already say which. " +
+        Description = "Put things in order. On the graph: give 'arrange' to stand filers and securities in ranked " +
+                      "columns by value, by number of holdings or by name, or to put the data's own layout back. " +
+                      "On the sheet: reorder the rows or columns. Pass 'axis' when the names you give do not already say which. " +
                       "Use 'order' whenever more than one line moves: give the sequence you want, applied in one step as " +
                       "one undo entry. Calendar order is one call, not twelve. 'from' and 'to' are for nudging a single " +
                       "line. " +
@@ -49,7 +57,14 @@ public sealed class CallSortTool : AgenticTool<CallSortTool.Args> {
     };
 
     protected override void Run(Args args, Dictionary<string, object> result) {
+        if (!ResolveView(args.view, result, out ViewKind view)) return;
         if (!EnsureToolSelected(ToolType.Sort, result)) return;
+        result["view"] = Views.Name(view);
+        if (view == ViewKind.Graph) { RunGraph(args, result); return; }
+        if (!string.IsNullOrWhiteSpace(args.arrange)) {
+            result["error"] = "'arrange' is for the graph; the sheet sorts with 'order', 'by', or 'from' and 'to'.";
+            return;
+        }
 
         var sort = Scene.Sort;
         if (sort == null) { result["error"] = "Sort tool not found in scene."; return; }
@@ -269,5 +284,32 @@ public sealed class CallSortTool : AgenticTool<CallSortTool.Args> {
         Dictionary<string, object> result) {
         if (order == null || order.Count > MaxEchoedLines) return;
         result["order"] = DataSource.BlockTitlesFor(data, isColumn, order);
+    }
+
+    // ----- The graph -----
+
+    private static void RunGraph(Args args, Dictionary<string, object> result) {
+        if (string.IsNullOrWhiteSpace(args.arrange)) {
+            NeedChoice(result, "arrange", new List<string> { "value", "holders", "name", "layout" },
+                "Say how to arrange the graph: by value, by holders, by name, or back to its layout.");
+            return;
+        }
+
+        GraphOrder order;
+        switch (args.arrange.Trim().ToLowerInvariant()) {
+            case "value": order = GraphOrder.Value; break;
+            case "holders": order = GraphOrder.Holders; break;
+            case "name": order = GraphOrder.Name; break;
+            default: order = GraphOrder.Layout; break;
+        }
+
+        SortTool sort = Scene.Sort;
+        ManageGraph graph = Scene.Graph;
+        if (sort == null || graph == null || graph.Data == null) { result["error"] = "The graph is not ready."; return; }
+
+        sort.Arrange(order);
+        result["arranged"] = ManageGraph.OrderName(graph.Order);
+        if (order != GraphOrder.Layout)
+            result["note"] = "Filers stand on the left and securities on the right, first at the top of each.";
     }
 }

@@ -6,6 +6,9 @@ using Type = Google.GenAI.Types.Type;
 
 public sealed class SetDataset : AgenticTool<SetDataset.Args> {
 
+    // Offered only while the bar sheet is in the room.
+    public override bool IsAvailable() => Views.Sheet;
+
     public class Args {
         [Doc("The dataset's name, or its position in the list ListDatasets returns where 1 is the newest. " +
              "Prefer the name.")]

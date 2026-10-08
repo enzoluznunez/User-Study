@@ -6237,9 +6237,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 278d6042b6812657ffde60e42bb1713d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  manageDatasets: {fileID: 1166616950}
-  apiUrlFile: api.url
-  allIndustriesLabel: All Industries
+  nodesFile: 13f_sample_nodes.csv
+  edgesFile: 13f_sample_edges.csv
+  showGraph: 1
+  showSheet: 0
 --- !u!1 &1166617000
 GameObject:
   m_ObjectHideFlags: 0
@@ -11773,10 +11774,89 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2110263159}
   m_CullTransparentMesh: 1
+--- !u!1 &1266123189
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1017593816}
+  - component: {fileID: 1750986326}
+  - component: {fileID: 1987112527}
+  m_Layer: 0
+  m_Name: Graph
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1017593816
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1266123189}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1750986326
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1266123189}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c82bd72ba46412da142717c94d7b8bd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  piecePrefab: {fileID: 3106634379877467101, guid: 51c085d75ab74a5cb21981127df9f51c, type: 3}
+  material: {fileID: 2100000, guid: 137244d2eaaca4feeadc62007d54ff30, type: 2}
+  layoutRadius: 0.3
+  minNodeRadius: 0.008
+  maxNodeRadius: 0.026
+  minEdgeWidth: 0.0012
+  maxEdgeWidth: 0.006
+  maxFilersDrawn: 60
+  maxSecuritiesDrawn: 150
+  labelMinHolders: 2
+  labelTextScale: 0.18
+  minimumZOffsetFromCamera: 0.35
+  heightFraction: 0.8
+  systemMotionSpeed: 0.5
+  minMotionSeconds: 0.1
+  maxMotionSeconds: 1.5
+  nodesPerColumn: 24
+  columnSpacing: 0.07
+  arrangeSeconds: 0.6
+  besideSheetOffset: 0.7
+--- !u!114 &1987112527
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1266123189}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 869d8949a88749489099bf645f5559d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  touchInput: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
+  - {fileID: 1017593816}
   - {fileID: 1166617002}
   - {fileID: 690184421}
   - {fileID: 1251899887}

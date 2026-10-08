@@ -34,9 +34,9 @@ public class ToolPanelUI : PanelUI
 
     // The order the tiles appear in, and the only thing that decides it: the grid
     // is filled in this order regardless of how the buttons sit in the scene. The
-    // first row moves the sheet around the room, the second changes what it shows,
-    // and the assistant spans the third — so a row is one kind of verb and the
-    // grouping needs no label to explain it.
+    // first row moves the views around the room, the second changes what they
+    // show, and the assistant spans the third — so a row is one kind of verb and
+    // the grouping needs no label to explain it.
     public static readonly ToolType[] Tools =
     {
         ToolType.Move,
@@ -50,25 +50,46 @@ public class ToolPanelUI : PanelUI
 
     public static string Label(ToolType tool) => tool.ToString();
 
+    // What a tool does, said for the views in the room: the sheet's sentence,
+    // the graph's, or both when both stand there.
     public static string Description(ToolType tool)
     {
+        string what = Views.Both ? "the sheet or the graph" : Views.Sheet ? "the sheet" : "the graph";
         switch (tool)
         {
             case ToolType.Move:
-                return "Slides the sheet through the room, so you can stand where you want and bring the numbers to you. Grab it anywhere with one hand and carry it there.";
+                return $"Slides {what} through the room, so you can stand where you want and bring the holdings to you. Grab it anywhere with one hand and carry it there.";
             case ToolType.Rotate:
-                return "Turns the sheet on the spot, so you can read it from another side without walking around it. Grab it with both hands and twist to the angle you want.";
+                return $"Turns {what} on the spot, so you can see it from another side without walking around it. Grab it with both hands and twist to the angle you want.";
             case ToolType.Scale:
-                return "Resizes the sheet, from a tabletop model up to a wall you stand inside. Grab it with both hands, then move them apart to enlarge it or together to shrink it.";
+                return $"Resizes {what}, from a tabletop model up to a room you stand inside. Grab it with both hands, then move them apart to enlarge it or together to shrink it.";
             case ToolType.Profile:
-                return "Lifts one row or column clear of the sheet and reports its count, range, average and total. Press a bar, then sweep your finger along the line you want raised.";
+                return Join(
+                    "On the sheet, lifts one row or column clear and reports its count, range, average and total: press a bar, then sweep your finger along the line you want raised.",
+                    "On the graph, poke a node to profile it: a breadth-first search lights what it reaches, as many hops out as you pick below, and a card totals the positions inside. Poke it again to let go.");
             case ToolType.Sort:
-                return "Reorders the rows or the metrics, so the ones you are comparing sit side by side. Pinch a line beside its label, or anywhere along it, and slide it into place.";
+                return Join(
+                    "On the sheet, reorders the rows or columns so the ones you are comparing sit side by side: pinch a line beside its label, or anywhere along it, and slide it into place.",
+                    "On the graph, stands filers and securities in ranked columns by value, holdings or name; Layout puts every node back where the data placed it.");
             case ToolType.Filter:
-                return "Chooses what stands on the sheet, narrowing it to what you asked for. Open By Company or By Metric, then poke a bar to take that line off the sheet, or tap a name in the list; a filled square means it is showing, and tapping it again brings it back.";
+                return Join(
+                    "On the sheet, open By Company or By Metric, then poke a bar to take that line off, or tap a name in the list; a filled square means it is showing.",
+                    "On the graph, open Investors or Holdings and tap a name to switch it off or on, or poke a node; a filled square means it is showing. Switching an investor off hides it and its edges, and the holdings stay. The amounts hide edges smaller than the one you pick.");
             default:
                 return string.Empty;
         }
+    }
+
+    private static string Join(string sheet, string graph) =>
+        Views.Both ? sheet + " " + graph : Views.Sheet ? Strip(sheet) : Strip(graph);
+
+    // With one view in the room, "On the graph," says nothing the user needs.
+    private static string Strip(string sentence)
+    {
+        int comma = sentence.IndexOf(", ", System.StringComparison.Ordinal);
+        if (comma < 0 || !sentence.StartsWith("On the ", System.StringComparison.Ordinal)) return sentence;
+        string rest = sentence.Substring(comma + 2);
+        return char.ToUpperInvariant(rest[0]) + rest.Substring(1);
     }
 
     private class ToolButtonVisual
@@ -525,7 +546,7 @@ public class ToolPanelUI : PanelUI
         layout.childForceExpandHeight = false;
 
         AddHeader(content, "Assistant");
-        AddDescription(content, "Works the tools for you by voice: ask for a sheet, a sort or a filter and it carries the request out. Pick how fast its actions play out on screen.");
+        AddDescription(content, "Answers questions about the holdings and works the tools for you by voice: ask who holds a security, or for a focus or a filter, and it carries the request out. Pick how fast its actions play out on screen.");
 
         var buttons = new (string, string, UnityEngine.Events.UnityAction)[AssistantSpeedLabels.Length];
         for (int i = 0; i < AssistantSpeedLabels.Length; i++)
@@ -552,8 +573,7 @@ public class ToolPanelUI : PanelUI
         if (index < 0 || index >= AssistantSpeedLabels.Length || _assistantSpeedIndex == index) return false;
         _assistantSpeedIndex = index;
         _assistantSpeedRow?.SetSelected(index);
-        var sheets = Scene.Sheets;
-        if (sheets != null) sheets.SetAgentMotion(AssistantSpeedValues[index], AssistantSpeedValues[index] <= 0f);
+        AgentMotion.Set(AssistantSpeedValues[index], AssistantSpeedValues[index] <= 0f);
         return true;
     }
 
@@ -921,40 +941,8 @@ public class ToolPanelUI : PanelUI
         return list;
     }
 
-    // A scrollable column of toggles in a tool's pane, for options that are not
-    // exclusive: unlike a toggle row, any number can be on, so the caller keeps
-    // the handles and lights them itself.
-    // 'name' lets one tool keep more than one list: each replaces only the list
-    // it named, so rebuilding the metrics does not take the categories with it.
-    public ButtonList AddOptionList(ToolType tool, float height, string name = "OptionList")
-    {
-        GameObject content = GetToolContent(tool);
-        if (content == null) return null;
-
-        ReplaceNamed(content.transform, name);
-
-        GameObject host = new GameObject(name);
-        host.transform.SetParent(content.transform, false);
-        RectTransform rect = host.AddComponent<RectTransform>();
-
-        UILayout.FixedHeight(host, height);
-
-        ButtonList list = new ButtonList(rect, new ButtonList.Options
-        {
-            axis = ButtonList.Axis.Vertical,
-            sizing = ButtonList.Sizing.Measured,
-            alignment = TextAnchor.UpperLeft,
-            itemHeight = Style.Subbutton.y,
-            backed = true,
-            scrollable = true
-        });
-
-        host.transform.SetAsLastSibling();
-        return list;
-    }
-
     // A scrollable column of check rows: the label on the left, a square on the
-    // right that is filled while the thing is on the sheet. Unlike a toggle row
+    // right that is filled while the thing is on the graph. Unlike a toggle row
     // any number can be checked, so the caller keeps the handles and sets the
     // squares itself.
     public ButtonList AddCheckList(ToolType tool, float height, string name = "CheckList")

@@ -59,4 +59,34 @@ public static class CameraRig
             return cam != null ? Flatten(cam.forward, Vector3.forward) : Vector3.forward;
         }
     }
+
+    // Whether the headset knows where the eyes are yet: before it does, the
+    // camera sits at the tracking origin and anything placed from it lands on
+    // the floor.
+    public static bool HeadPoseReady()
+    {
+        if (!OVRManager.OVRManagerinitialized) return true;
+        return OVRPlugin.userPresent && OVRPlugin.GetNodePositionTracked(OVRPlugin.Node.EyeCenter);
+    }
+
+    // The viewer's eye position and the way they face, levelled to the floor.
+    public static bool TryGetBasis(out Vector3 position, out Quaternion yaw)
+    {
+        position = Vector3.zero;
+        yaw = Quaternion.identity;
+
+        if (!HeadPoseReady()) return false;
+
+        Transform cam = MainTransform;
+        if (cam == null) return false;
+
+        position = cam.position;
+
+        Vector3 flat = Vector3.ProjectOnPlane(cam.forward, Vector3.up);
+        if (flat.sqrMagnitude < 1e-6f) flat = Vector3.ProjectOnPlane(cam.up, Vector3.up);
+        if (flat.sqrMagnitude < 1e-6f) return false;
+
+        yaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
+        return true;
+    }
 }

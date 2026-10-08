@@ -23,7 +23,7 @@ public class Tooltip : MonoBehaviour
     public struct SelectionStats
     {
         public string title;
-        public SheetStats.Summary stats;
+        public ValueStats.Summary stats;
     }
 
     private Canvas _canvas;
@@ -41,6 +41,7 @@ public class Tooltip : MonoBehaviour
     private bool _statsPending;
     private SelectionStats _pendingStats;
     private Func<Vector3> _pendingAnchor;
+    private object _statsOwner;
 
     private void Awake()
     {
@@ -137,9 +138,12 @@ public class Tooltip : MonoBehaviour
         return cam.position + CameraRig.FlatForward * NoticeDistanceFromCamera;
     }
 
-    public void ShowStats(Func<Vector3> anchor, SelectionStats selection)
+    // 'owner' says who put the card up, so a HideStats from someone else (the
+    // graph letting go of a profile, say) leaves the sheet's card standing.
+    public void ShowStats(Func<Vector3> anchor, SelectionStats selection, object owner = null)
     {
         if (anchor == null) return;
+        _statsOwner = owner;
 
         StopSettle();
         EnsureStatsGroup();
@@ -174,8 +178,9 @@ public class Tooltip : MonoBehaviour
         _settle = null;
     }
 
-    public void HideStats()
+    public void HideStats(object owner = null)
     {
+        if (owner != null && !owner.Equals(_statsOwner)) return;
         _statsPending = false;
         if (_statsGroup == null || !_statsGroup.activeSelf) return;
         Hide();
@@ -183,11 +188,11 @@ public class Tooltip : MonoBehaviour
 
     public void DismissNotice()
     {
-        if (_statsPending && _pendingAnchor != null) ShowStats(_pendingAnchor, _pendingStats);
+        if (_statsPending && _pendingAnchor != null) ShowStats(_pendingAnchor, _pendingStats, _statsOwner);
         else Hide();
     }
 
-    private static void FillStats(TextMeshProUGUI[] cells, SheetStats.Summary summary)
+    private static void FillStats(TextMeshProUGUI[] cells, ValueStats.Summary summary)
     {
         if (cells == null) return;
 

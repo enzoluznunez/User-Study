@@ -9,15 +9,8 @@ public class ManageTools : MonoBehaviour
 
     public event Action<ToolType> OnToolReset;
 
-    public ManageSheets sheetManager;
-
 
     public ToolType SelectedTool { get; private set; } = ToolType.None;
-
-    private void Start()
-    {
-        if (sheetManager == null) sheetManager = FindAnyObjectByType<ManageSheets>();
-    }
 
     private static bool UserDriven => StateChannel.UserDriven;
 
@@ -63,102 +56,84 @@ public class ManageTools : MonoBehaviour
 
     public void ForgetSuspendedTool() => _suspended = ToolType.None;
 
-    public void ResetTool(ToolType tool)
+    // Puts one tool back the way it started on every view. Only Undo All
+    // calls it, once every edit has been walked back, so it touches no view
+    // that still has history to keep.
+    private void ResetTool(ToolType tool)
     {
         OnToolReset?.Invoke(tool);
-        if (TryEditKindOf(tool, out EditKind kind)) ManageDatasets.ActiveEdits.DropKind(kind);
-        if (sheetManager != null) sheetManager.SyncProjectionToStack();
+        if (TryEditKindOf(tool, out EditKind kind)) EditList.Active.DropKind(kind);
+        SyncViews();
+    }
+
+    private static void SyncViews()
+    {
+        foreach (IView view in Scene.Views) view.SyncToTimeline();
     }
 
     private static bool TryEditKindOf(ToolType tool, out EditKind kind) =>
         Enum.TryParse(tool.ToString(), out kind);
 
-    private ManageSheets.UndoResult UndoTop(out string kindName)
+    // An edit goes back to the view that made it, which knows how to undo it.
+    private static UndoResult UndoTop(out string kindName)
     {
-        Edit rec = ManageDatasets.ActiveEdits.Peek();
+        Edit rec = EditList.Active.Peek();
         kindName = rec != null ? Edit.KindName(rec.kind) : null;
+        if (rec == null) return UndoResult.Stale;
 
-        if (rec == null) return ManageSheets.UndoResult.Stale;
-        if (sheetManager == null) return ManageSheets.UndoResult.Unreachable;
+        IView view = Scene.ViewOf(rec.view);
+        if (view == null) return UndoResult.Unreachable;
 
-        ManageSheets.UndoResult outcome = sheetManager.Undo(rec);
-        if (outcome != ManageSheets.UndoResult.Unreachable)
+        UndoResult outcome = view.Undo(rec);
+        if (outcome != UndoResult.Unreachable)
         {
-            ManageDatasets.ActiveEdits.Pop();
-            sheetManager.SyncProjectionToStack();
+            EditList.Active.Pop();
+            SyncViews();
         }
         return outcome;
     }
 
-    public bool Undo()
+    // Applied when the newest step was undone; Stale when its records no
+    // longer matched and were dropped; Unreachable when it could not run now
+    // and was kept, and trying again will not help until something changes.
+    public UndoResult Undo()
     {
-        Edit top = ManageDatasets.ActiveEdits.Peek();
-        if (top == null) return false;
+        if (EditList.Active.Peek() == null) return UndoResult.Stale;
 
-        if (top.kind == EditKind.Sort)
-        {
-            SortTool sort = Scene.Sort;
-            if (sort != null) sort.HaltOrderSequence();
-        }
-
-        int inGroup = ManageDatasets.ActiveEdits.TopGroupSize();
-
-        bool sortRows = false, sortColumns = false;
-        for (int i = ManageDatasets.ActiveEdits.Count - inGroup; i < ManageDatasets.ActiveEdits.Count; i++)
-        {
-            if (i < 0) continue;
-            Edit rec = ManageDatasets.ActiveEdits[i];
-            if (rec.kind != EditKind.Sort) continue;
-            if (rec.reorderIsColumn) sortColumns = true;
-            else sortRows = true;
-        }
+        int inGroup = EditList.Active.TopGroupSize();
 
         switch (UndoTop(out string kindName))
         {
-            case ManageSheets.UndoResult.Applied:
+            case UndoResult.Applied:
                 for (int i = 1; i < inGroup; i++)
-                    if (UndoTop(out _) == ManageSheets.UndoResult.Unreachable) break;
-                if (UserDriven)
-                {
-                    if (sortRows) StalePositions.MarkDirty(false);
-                    if (sortColumns) StalePositions.MarkDirty(true);
-                }
+                    if (UndoTop(out _) == UndoResult.Unreachable) break;
                 StateChannel.Record("Undo", inGroup > 1
                     ? $"undid the {kindName} edit ({inGroup} steps, one action)"
                     : $"undid the {kindName} edit");
-                return true;
+                return UndoResult.Applied;
 
-            case ManageSheets.UndoResult.Unreachable:
+            case UndoResult.Unreachable:
                 Debug.LogWarning($"[ManageTools] {kindName} undo could not run; the record was kept.");
-                return false;
+                return UndoResult.Unreachable;
 
             default:
                 Debug.LogWarning($"[ManageTools] {kindName} undo no longer matches the scene; the record was dropped.");
-                return false;
+                return UndoResult.Stale;
         }
     }
 
     public void UndoAll()
     {
-        int had = ManageDatasets.ActiveEdits.Count;
+        int had = EditList.Active.Count;
 
-        bool hadSort = false;
-        for (int i = 0; i < had; i++)
-            if (ManageDatasets.ActiveEdits[i].kind == EditKind.Sort) { hadSort = true; break; }
+        for (int i = 0; i < had && EditList.Active.Peek() != null; i++)
+            if (UndoTop(out _) == UndoResult.Unreachable) break;
 
-        for (int i = 0; i < had && ManageDatasets.ActiveEdits.Peek() != null; i++)
-            if (UndoTop(out _) == ManageSheets.UndoResult.Unreachable) break;
-
-        foreach (ToolType tool in System.Enum.GetValues(typeof(ToolType)))
+        foreach (ToolType tool in Enum.GetValues(typeof(ToolType)))
             if (tool != ToolType.None) ResetTool(tool);
 
-        ManageDatasets.ActiveEdits.Clear();
-        if (sheetManager != null) sheetManager.SyncProjectionToStack();
-        if (hadSort && UserDriven)
-        {
-            StalePositions.MarkDirty(false);
-            StalePositions.MarkDirty(true);
-        }
+        EditList.Active.Clear();
+        SyncViews();
         if (had > 0) StateChannel.Record("Undo", $"undid all {had} edits");
     }
 }

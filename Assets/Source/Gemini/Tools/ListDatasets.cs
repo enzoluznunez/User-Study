@@ -4,11 +4,14 @@ using Google.GenAI.Types;
 
 public sealed class ListDatasets : AgenticTool {
 
+    // Offered only while the bar sheet is in the room.
+    public override bool IsAvailable() => Views.Sheet;
+
     public override FunctionDeclaration Declaration => new FunctionDeclaration {
         Name = "ListDatasets",
         Description = "List the datasets and what stands on each: 'name', 'active' (whether it is the dataset " +
-                      "currently open), 'read' (false for an industry that is listed but has not been read yet; " +
-                      "SetDataset reads it, and 'companies' says how many it would bring) and 'edits' (the tool " +
+                      "currently open), 'read' (false for one that is listed but has not been read yet; " +
+                      "SetDataset reads it) and 'edits' (the tool " +
                       "edits that currently stand on it, newest first). " +
                       "This is cheap and carries no row, column or value data; call DescribeSheet for the sheet's " +
                       "titles, ranges, position and industries, GetNumbers for its numbers, or DescribeDataset for " +
@@ -29,14 +32,13 @@ public sealed class ListDatasets : AgenticTool {
                 var dataset = datasets.Datasets[i];
                 bool active = i == datasets.ActiveIndex;
 
-                // An industry that has not been read yet has no sheet and no
+                // A dataset that has not been read yet has no sheet and no
                 // edits; saying so is the whole of what there is to report.
                 if (!dataset.loaded) {
                     list.Add(new Dictionary<string, object> {
                         { "name", string.IsNullOrEmpty(dataset.label) ? "dataset" : dataset.label },
                         { "active", false },
-                        { "read", false },
-                        { "companies", dataset.companies }
+                        { "read", false }
                     });
                     continue;
                 }
@@ -45,7 +47,7 @@ public sealed class ListDatasets : AgenticTool {
                     { "name", string.IsNullOrEmpty(dataset.label) ? "dataset" : dataset.label },
                     { "active", active },
                     { "read", true },
-                    { "edits", DescribeStack(dataset.Edits, dataset.source, active) }
+                    { "edits", DescribeStack(active ? SheetEdits() : dataset.sheetEdits, dataset.source, active) }
                 });
             }
         }
@@ -53,13 +55,17 @@ public sealed class ListDatasets : AgenticTool {
             list.Add(new Dictionary<string, object> {
                 { "name", Scene.DatasetLabel },
                 { "active", true },
-                { "edits", DescribeStack(ManageDatasets.ActiveEdits, Scene.Data, true) }
+                { "edits", DescribeStack(SheetEdits(), Scene.Data, true) }
             });
         }
         return list;
     }
 
     private const int MaxEdits = 10;
+
+    // The open dataset's sheet edits, off the timeline it shares with the graph.
+    // A dataset not open keeps its own until it is opened again.
+    private static List<Edit> SheetEdits() => EditList.Active.FindAll(e => e.view == ViewKind.Sheet);
 
     private static List<object> DescribeStack(IReadOnlyList<Edit> stack, DataSource data, bool active)
     {

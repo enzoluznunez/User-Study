@@ -1,34 +1,71 @@
-# NASBA-Project
+# User-Study
 
-A data visualization app for Meta Quest 3, built in Unity. Sheets of company
-financials stand in front of you in passthrough, one industry at a time or all of
-them at once, and you reshape them with your hands. A voice assistant, Ada, can
-drive the same tools when asked.
+A data visualization app for Meta Quest 3, built in Unity, for exploring 13F
+holdings: which investment managers reported holding which securities at the end
+of a quarter. You reshape the view with your hands, and a voice assistant, Ada,
+answers questions about the holdings and drives the same tools when asked.
 
 ## What You Can Do
 
-Six tools sit on the tool panel. Pick one, then point at the sheet:
+The holdings stand in front of you in passthrough as a 3D network, a bar sheet,
+or both side by side. In the network, filers are orange cubes sized by their
+reported portfolio, securities are blue spheres sized by the value held in them,
+and each holding is an edge between the two, thicker for a larger position. On
+the sheet, each row is a security, each column a filer, and each bar one
+position in dollars.
 
-| Tool | What it does |
-|---|---|
-| **Filter** | Hide or show companies (rows) and metrics (columns). A hidden line comes back where it was. |
-| **Sort** | Reorder rows or columns, by hand or by their numbers. |
-| **Profile** | Raise a whole row or column as a strip floating above the sheet. |
-| **Move**, **Rotate**, **Scale** | Place the sheet in the room. |
+Six tools sit on the tool panel, and each works on whichever view you touch:
 
-Undo takes back any of them. Everything the tools do, Ada can do by voice. Ask
-Ada to sort by a metric, raise the best company, read out a number or switch
-industries.
+| Tool | On the graph | On the sheet |
+|---|---|---|
+| **Profile** | Poke a node: a breadth-first search lights what it reaches, 1, 2 or 3 hops out (pick in the panel), and a card totals the positions inside. Poke it again to let go. | Press a bar and sweep along a row or column to raise it as a strip, with its count, range, average and total. |
+| **Filter** | Two lists, Investors and Holdings, name every filer and security on the graph, all on to begin with. Untick an investor to hide it and its edges; its holdings stay until you untick them too. Poking a node switches it off. The amounts hide edges below $10M, $50M, $100M or $250M. | Open By Company or By Metric, then poke a bar or tick a name. |
+| **Sort** | Arrange filers and securities in ranked columns by value, holdings or name; Layout restores the data's own positions. | Pinch a line and slide it into place. |
+| **Move**, **Rotate**, **Scale** | Place the view in the room. | Same. |
+
+Undo takes back any of them, across both views, newest first. Everything the
+tools do, Ada can do by voice, and Ada can answer from the whole dataset
+whatever is on view: ask who holds a security, what a filer holds, or what two
+filers have in common.
+
+### Choosing the views
+
+The **Data** object in `File Reader.unity` has two switches on its
+HoldingsLoader component: **Show Graph** (on by default) and **Show Sheet**
+(off by default). Turn both on to stand the sheet and the graph side by side;
+the graph moves to the right of the sheet so neither stands inside the other.
+Ada's prompt and tools follow the switches, and with both on she asks which
+view you mean when a request could fit either.
 
 ## What's in the Repository
 
 | Path | What it holds |
 |---|---|
-| `Assets/Source/` | The app's C# code: `Main` starts the scene and camera rig, `Data` fetches and holds sheets, `Sheet` draws them, `Tools` and `UI` are the hand interface, `InteractionAPI` holds the hand poses, `Audio` wraps the native microphone and speaker plugins, `Poster` builds the figures `Assets/Editor/PosterCapture.cs` renders for the poster, and `Gemini` is the voice assistant and the tools it calls. |
+| `Assets/Source/` | The app's C# code: `Main` starts the scene and camera rig, `Data` loads the holdings, `Graph` draws the network, `Sheet` draws the bar sheet, `Tools` and `UI` are the hand interface, `InteractionAPI` holds the hand poses, `Audio` wraps the native microphone and speaker plugins, `Poster` builds the figures `Assets/Editor/PosterCapture.cs` renders, and `Gemini` is the voice assistant and the tools it calls. |
 | `Assets/Scenes/File Reader.unity` | The one scene the app runs. |
-| `pipeline/` | The Python side: rebuilds the MongoDB database from the raw export in S3 (48,429 rows, cleaned to 1,249 companies across fiscal 2019–2020) and serves it as an API on AWS Lambda. See `pipeline/README.md`. |
+| `Assets/StreamingAssets/13f_sample_*.csv` | The data, and its only copy. See **The Data** below. |
 
-The app ships no data. Every sheet is fetched from the API when it is opened.
+The app ships its data and needs no server: the only network call it makes is to Gemini, for voice.
+
+## The Data
+
+Two CSVs in `Assets/StreamingAssets/` are the single source of truth. Edit them
+directly; nothing generates them.
+
+| File | One row per | Joins on |
+|---|---|---|
+| `13f_sample_nodes.csv` | filer (`node_type` = `filer`) and security (`security`), with its `x`,`y`,`z` layout | — |
+| `13f_sample_edges.csv` | position: one filer holding one security | `filer_cik` to a filer, `cusip` to a security |
+
+They are a sample of 13F filings for the quarter ending 30 June 2026. Keep them clean the way they are now:
+
+- **CUSIPs are uppercase**, and the spelling each arrived in is kept in `cusip_raw`.
+- **Each security appears once.** Two spellings of one CUSIP are one security.
+- **A filer holds a security at most once.** Positions under two spellings are summed.
+- **`display_name` tells securities apart.** It carries the share class (`Alphabet Inc. Class A`, `… Class C`), then the issue where names still collide (`iShares Trust · CORE S&P500 ETF`). `share_class` holds the class on its own.
+- **`filers_holding_in_sample` and `combined_value_in_sample_usd`** must agree with the edges.
+
+The app refuses to load a file that breaks the join or lists a CUSIP twice, and says why in a notice.
 
 # Getting Started
 
@@ -36,8 +73,7 @@ The app ships no data. Every sheet is fetched from the API when it is opened.
 
 - [ ] A Meta Quest 3 with a USB-C cable
 - [ ] A Google Gemini API key on a paid tier
-- [ ] The API key file, `api.key`, from the project owner
-- [ ] Internet access on the headset
+- [ ] Internet access on the headset, for voice
 
 ## Prepare the Meta Quest 3
 
@@ -60,41 +96,14 @@ The app ships no data. Every sheet is fetched from the API when it is opened.
    it with 6000.4.0f1. The first import takes several minutes.
 3. Open `Assets/Scenes/File Reader.unity`.
 
-## Configure the Project's Codebase
+## Add Your Gemini API Key
 
-The app reads three one-line files from `Assets/StreamingAssets/`. Git ignores
-all three, so they stay on your machine and a fresh clone never carries them.
+Create a file at `Assets/StreamingAssets/gemini.key` holding your API key on one
+line and nothing else. Git ignores it, so it stays on your machine. Without it
+everything works except the voice assistant.
 
-| File | Needed? | Without it |
-|---|---|---|
-| `api.key` | Yes | The app opens with nothing listed and says so in a notice. |
-| `gemini.key` | For voice | Every sheet still works; only the assistant fails to start. |
-| `api.url` | No | The app uses the deployed API, which is what you want. |
-
-Everything in `StreamingAssets` is packed into the build, so a built `.apk` carries
-both keys. Don't share an `.apk` with anyone you wouldn't give the keys to.
-
-### Connect to the Financial Database
-
-Every sheet is drawn live from a database in the cloud: the API runs on AWS
-Lambda and reads MongoDB Atlas, and the app already knows its address. It only
-needs the key.
-
-1. Ask the project owner for `api.key`.
-2. Put it at `Assets/StreamingAssets/api.key`.
-
-To point the app at an API running on your own computer instead, put its
-address on one line in `Assets/StreamingAssets/api.url`, such as
-`http://127.0.0.1:8000`. That file goes into headset builds too, and on the
-headset `127.0.0.1` is the headset itself. Use your computer's network address
-for a headset build, and delete the file when you are done so later builds go
-back to the deployed API. `pipeline/README.md` covers running and deploying the
-API and rebuilding the data.
-
-### Add Your Gemini API Key
-
-Create a file at `Assets/StreamingAssets/gemini.key` holding your API key on one line and
-nothing else.
+Everything in `StreamingAssets` is packed into the build, so a built `.apk`
+carries the key. Don't share an `.apk` with anyone you wouldn't give the key to.
 
 ## Building to the Meta Quest 3
 
@@ -107,9 +116,8 @@ nothing else.
 4. In the headset, accept the microphone prompt at launch. Denying it leaves everything
    working except voice.
 
-Done when you are standing in passthrough with the industries listed beside you. An empty list
-means the database could not be reached — check the headset's internet connection,
-`api.key`, and that no stale `api.url` is left over — not that the build failed.
+Done when you are standing in passthrough and Ada greets you. A "No Data" notice
+means a CSV in `StreamingAssets` is missing or does not read, and says which.
 
 ## FAQ
 
@@ -117,6 +125,6 @@ means the database could not be reached — check the headset's internet connect
 
 **Can I try it without a headset?** Not meaningfully — hand input and passthrough are the interface.
 
-**Where does the data come from, and how do I change it?** A financial export in a
-private S3 bucket, rebuilt into MongoDB Atlas by `pipeline/rebuild.py`. See
-`pipeline/README.md`.
+**Where does the data come from, and how do I change it?** From 13F filings with
+the SEC. Edit the two CSVs in `Assets/StreamingAssets/` directly, keeping them
+to the rules under **The Data**.

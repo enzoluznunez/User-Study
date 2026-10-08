@@ -42,17 +42,13 @@ public class Parser : DataSource
 
     private System.Collections.IEnumerator LoadFromStreamingAssets(string fileName)
     {
-        string path = Path.Combine(Application.streamingAssetsPath, fileName);
-        string url = path.Contains("://") ? path : "file://" + path;
-        return LoadFromWebRequest(url);
+        return LoadFromWebRequest(StreamingAssets.Url(fileName));
     }
 
     private System.Collections.IEnumerator LoadFromWebRequest(string url)
     {
         using (UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequest.Get(url))
         {
-            // A sheet from the API carries its key; a file or any other URL does not.
-            FinancialsApi.Authorize(www);
             yield return www.SendWebRequest();
 
             if (www.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
@@ -299,42 +295,7 @@ public class Parser : DataSource
         SetColumnGroupSize(1);
     }
 
-    public static List<string> ParseCSVLine(string line)
-    {
-        var fields = new List<string>();
-        bool inQuotes = false;
-        var sb = new System.Text.StringBuilder(64);
-
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (inQuotes)
-            {
-                if (c == '"')
-                {
-                    if (i + 1 < line.Length && line[i + 1] == '"')
-                    {
-                        sb.Append('"');
-                        i++;
-                    }
-                    else inQuotes = false;
-                }
-                else sb.Append(c);
-            }
-            else
-            {
-                if (c == '"') inQuotes = true;
-                else if (c == ',')
-                {
-                    fields.Add(sb.ToString());
-                    sb.Clear();
-                }
-                else sb.Append(c);
-            }
-        }
-        fields.Add(sb.ToString());
-        return fields;
-    }
+    public static List<string> ParseCSVLine(string line) => Csv.Fields(line);
 
     private static bool TryParseFloat(string value, out float result)
     {

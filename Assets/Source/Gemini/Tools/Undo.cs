@@ -30,8 +30,9 @@ public sealed class Undo : AgenticTool<Undo.Args> {
             return new FunctionDeclaration {
                 Name = "Undo",
                 Description = "Undo recent edits, newest first (the tool panel's Undo / Undo All buttons). " +
-                              "All edits share one timeline: moved/rotated/scaled pieces, Sort reorders, " +
-                              "the projections raised by the Profile tool, and what the Filter tool took off the sheet. " +
+                              "All edits share one timeline, across the graph and the sheet: moving, turning and resizing " +
+                              "them, Sort reorders and arrangements, Profile strips and searches, and what the Filter tool " +
+                              "took off. " +
                               "Set 'all' to undo everything and clear the tool selection; 'count' never turns into Undo All, " +
                               "it stops when the timeline runs out. " +
                               "Optionally pass 'tool' to assert what the newest edit is; if it does not match, this refuses and names " +
@@ -48,7 +49,7 @@ public sealed class Undo : AgenticTool<Undo.Args> {
         var controller = Scene.Tools;
         if (controller == null) { result["error"] = "Tool controller not found in scene."; return; }
 
-        var top = ManageDatasets.ActiveEdits.Peek();
+        var top = EditList.Active.Peek();
         if (top == null) {
             result["undone"] = 0;
             result["remaining"] = 0;
@@ -81,14 +82,14 @@ public sealed class Undo : AgenticTool<Undo.Args> {
                     $"The newest edit is from the {Edit.KindName(top.kind)} tool, not the {requested} tool. Undo always " +
                     "removes the newest edit first. Ask the user which they meant, then call again without 'tool'.");
                 result["nextUndo"] = Edit.KindName(top.kind);
-                result["remaining"] = ManageDatasets.ActiveEdits.Count;
+                result["remaining"] = EditList.Active.Count;
                 return;
             }
         }
 
         if (undoAll) {
-            int had = ManageDatasets.ActiveEdits.Count;
-            int steps = ManageDatasets.ActiveEdits.UndoStepCount();
+            int had = EditList.Active.Count;
+            int steps = EditList.Active.UndoStepCount();
             controller.UndoAll();
             controller.DeselectTool();
             result["undone"] = steps;
@@ -101,21 +102,29 @@ public sealed class Undo : AgenticTool<Undo.Args> {
         }
 
         int did = 0, failed = 0;
-        for (int i = 0; i < count && ManageDatasets.ActiveEdits.Peek() != null; i++) {
-            if (controller.Undo()) did++;
-            else failed++;
+        bool stuck = false;
+        for (int i = 0; i < count && EditList.Active.Peek() != null; i++) {
+            UndoResult outcome = controller.Undo();
+            if (outcome == UndoResult.Applied) did++;
+            else if (outcome == UndoResult.Stale) failed++;
+            else { stuck = true; break; }
         }
 
         result["undone"] = did;
-        if (did < count)
-            result["note"] = $"Only {did} of the {count} you asked for were on the timeline; the rest never existed.";
+        if (did + failed < count && !stuck)
+            result["note"] = $"Only {did + failed} of the {count} you asked for were on the timeline; the rest never existed.";
         if (failed > 0) {
             result["failed"] = failed;
             result["note"] = failed + " edit(s) could not be reverted because they no longer matched the scene; " +
                              "they were dropped from the history. Tell the user rather than reporting success.";
         }
-        result["remaining"] = ManageDatasets.ActiveEdits.Count;
-        var next = ManageDatasets.ActiveEdits.Peek();
+        if (stuck) {
+            result["kept"] = Edit.KindName(EditList.Active.Peek().kind);
+            result["note"] = "The newest edit could not be undone right now, so it was kept on the timeline and " +
+                             "nothing past it was tried. Tell the user rather than reporting success.";
+        }
+        result["remaining"] = EditList.Active.Count;
+        var next = EditList.Active.Peek();
         if (next != null) result["nextUndo"] = Edit.KindName(next.kind);
     }
 }

@@ -34,7 +34,7 @@ public sealed class PlacePanel : AgenticTool<PlacePanel.Args> {
                       "It stays upright and within arm's reach, and must be open before it can be placed. " +
                       "Check the latest '[tool]' or '[state]' message for the panel's state before calling: " +
                       "if the user closed the panel, do not place it blind; reopen it with SetPanel first, or ask. " +
-                      "Placement is not an edit on the sheet's undo timeline, so Undo will not reverse it.",
+                      "Placement is not an edit on the graph's undo timeline, so Undo will not reverse it.",
         Parameters = ParametersFor(typeof(Args))
     };
 

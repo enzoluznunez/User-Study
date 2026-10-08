@@ -84,12 +84,6 @@ InitTestScene*.unity*
 /[Aa]ssets/StreamingAssets/gemini.key
 /[Aa]ssets/StreamingAssets/gemini.key.meta
 
-# Where this machine's financial API lives (differs per machine)
-/[Aa]ssets/StreamingAssets/api.url
-/[Aa]ssets/StreamingAssets/api.url.meta
-/[Aa]ssets/StreamingAssets/api.key
-/[Aa]ssets/StreamingAssets/api.key.meta
-
 # Addressables default ignores, before user customizations
 /ServerData
 /[Aa]ssets/StreamingAssets/aa*
@@ -127,16 +121,3 @@ ProjectSettings/AI.Assistant/
 # Unity crash-recovery scene dumps
 /[Aa]ssets/_Recovery/
 /[Aa]ssets/_Recovery.meta
-
-# Python pipeline
-/pipeline/.venv/
-__pycache__/
-.pytest_cache/
-/pipeline/.coverage
-# Connection strings and keys; .env.example shows the shape
-/pipeline/.env
-# sam build output
-/pipeline/.aws-sam/
-# Recorded API answers: real data, kept off GitHub
-/pipeline/regression/
-

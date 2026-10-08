@@ -31,8 +31,6 @@ public abstract class PanelUI : MonoBehaviour
 
     private bool _layoutDirty = true;
 
-    protected void InvalidateLayout() => _layoutDirty = true;
-
     protected virtual void ResolveDeferredLayout() { }
 
     protected void ShowCanvas()

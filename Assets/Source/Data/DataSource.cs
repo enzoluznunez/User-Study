@@ -64,18 +64,6 @@ public abstract class DataSource : MonoBehaviour
         string title = data != null ? data.TitleAt(columns, visIndex) : null;
         return string.IsNullOrEmpty(title) ? $"{(columns ? "column" : "row")} {visIndex + 1}" : title;
     }
-    public static List<string> TitlesFor(DataSource data, bool columns, IReadOnlyList<int> dataIndexes)
-    {
-        IReadOnlyList<string> titles = columns ? data.ColumnTitles : data.RowTitles;
-        var list = new List<string>(dataIndexes.Count);
-        for (int i = 0; i < dataIndexes.Count; i++)
-        {
-            int d = dataIndexes[i];
-            list.Add(d >= 0 && d < titles.Count ? titles[d] : null);
-        }
-        return list;
-    }
-
     // -1 when the line is not on the sheet, which now covers a hidden metric as
     // well as an index the data never had.
     public int VisIndexOf(bool columns, int dataIndex)
@@ -257,12 +245,6 @@ public abstract class DataSource : MonoBehaviour
     {
         int size = GroupSize(columns);
         return size > 1 ? visIndex / size : visIndex;
-    }
-
-    public int SeriesOf(bool columns, int visIndex)
-    {
-        int size = GroupSize(columns);
-        return size > 1 ? visIndex % size : 0;
     }
 
     public void GroupSpan(bool columns, int group, out int lo, out int hi)

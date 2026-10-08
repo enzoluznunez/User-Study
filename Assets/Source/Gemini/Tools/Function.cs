@@ -15,6 +15,20 @@ public abstract class Function {
 
     public virtual bool IsAvailable() => true;
 
+    protected static Schema ParametersFor(System.Type args) => ToolArguments.Schema(args);
+
+    // The tool that reads back what the room shows, for the views in it.
+    private static string DescribeTool =>
+        Views.Both ? "DescribeGraph or DescribeSheet" : Views.Sheet ? "DescribeSheet" : "DescribeGraph";
+
+    // Only the user can settle this one thing; 'options' lists the valid answers.
+    protected static void NeedChoice(Dictionary<string, object> result, string what,
+        IReadOnlyList<string> options, string message) {
+        result["needsChoice"] = what;
+        if (options != null && options.Count > 0) result["options"] = new List<object>(options);
+        result["message"] = message;
+    }
+
     public static async Task Run(AsyncSession session, FunctionCall call) {
         Dictionary<string, object> result;
         if (!registry.TryGetValue(call.Name, out var tool)) {
@@ -53,7 +67,7 @@ public abstract class Function {
                 Gemini.NoteToolSettled(call.Id);
                 await Respond(session, call, new Dictionary<string, object> {
                     { "error", "The tool result could not be delivered. The action may still have applied; " +
-                               "verify with DescribeSheet before retrying." }
+                               $"verify with {DescribeTool} before retrying." }
                 }).ConfigureAwait(false);
             }
             catch (Exception e2) {

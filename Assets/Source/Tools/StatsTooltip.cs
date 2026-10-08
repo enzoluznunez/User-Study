@@ -1,9 +1,10 @@
 public static class StatsTooltip
 {
-    public static void Hide()
+    // Takes the card down, or only the one 'owner' put up when one is named.
+    public static void Hide(object owner = null)
     {
         Tooltip tooltip = Scene.Tooltip;
-        if (tooltip != null) tooltip.HideStats();
+        if (tooltip != null) tooltip.HideStats(owner);
     }
 
     public static bool TryResolve(ManageSheets sheetManager, ReadSheets.Reading reading,

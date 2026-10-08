@@ -1,10 +1,21 @@
 using System.Collections.Generic;
+using System.Linq;
 using Google.GenAI.Types;
 
 public sealed class CallProfileTool : AgenticTool<CallProfileTool.Args> {
 
     public class Args {
-        [Doc("Which row or column to pull: its name, or its 1-based position on the sheet."), Optional]
+        [Doc("Which view to profile, when both the graph and the sheet are in the room."), Values("graph", "sheet"), Optional]
+        public string view;
+        [Doc("Graph: the filer or security to profile, by name, CIK or CUSIP."), Optional]
+        public string node;
+        [Doc("Graph: how many hops of breadth-first search out from the node to light. 1 is what a filer holds " +
+             "or who holds a security; 2 adds who else holds those; 3 adds what they hold besides. Defaults to the " +
+             "panel's setting."), Limits(1, 3), Optional]
+        public int? hops;
+        [Doc("Graph: let go of the profile instead."), Optional]
+        public bool? clear;
+        [Doc("Sheet: which row or column to pull: its name, or its 1-based position on the sheet."), Optional]
         public string index;
 [Doc("Whether this works on columns or rows. Leave it out when the name you gave already says which."), Values("columns", "rows"), Optional]
         public string axis;
@@ -30,7 +41,11 @@ public sealed class CallProfileTool : AgenticTool<CallProfileTool.Args> {
 
     public override FunctionDeclaration Declaration => new FunctionDeclaration {
         Name = "CallProfileTool",
-        Description = "Raise a whole row or column as a projection: a copy of that strip floating above it. Pass 'axis' " +
+        Description = "Profile part of the graph or the sheet, with a card of its count, range, average and total. " +
+                      "On the graph: give 'node' to run a breadth-first search out from it, 'hops' deep; what it " +
+                      "reaches stays lit, fainter the further out, the rest dims, and the card totals the holdings " +
+                      "inside. One node is profiled at a time; 'clear' lets go. " +
+                      "On the sheet: raise a whole row or column as a projection: a copy of that strip floating above it. Pass 'axis' " +
                       "when the name you give does not say which. The strip keeps the sheet's height scale, so its bars " +
                       "are comparable with the sheet it came from. It stays up after the tool is put away, is an edit " +
                       "on the undo timeline, and follows its values through a Sort reorder. Several can stand at once. " +
@@ -41,7 +56,10 @@ public sealed class CallProfileTool : AgenticTool<CallProfileTool.Args> {
     };
 
     protected override void Run(Args args, Dictionary<string, object> result) {
+        if (!ResolveView(args.view, result, out ViewKind view)) return;
         if (!EnsureToolSelected(ToolType.Profile, result)) return;
+        result["view"] = Views.Name(view);
+        if (view == ViewKind.Graph) { RunGraph(args, result); return; }
 
         var profile = Scene.Profile;
         if (profile == null) { result["error"] = "Profile tool not found in scene."; return; }
@@ -152,4 +170,42 @@ public sealed class CallProfileTool : AgenticTool<CallProfileTool.Args> {
         return true;
     }
 
+    // ----- The graph -----
+
+    private static void RunGraph(Args args, Dictionary<string, object> result) {
+        bool clear = args.clear == true;
+        if (!clear && string.IsNullOrWhiteSpace(args.node)) {
+            NeedChoice(result, "node", null, "Say which filer or security to profile, or pass 'clear'.");
+            return;
+        }
+
+        ProfileTool profile = Scene.Profile;
+        ManageGraph graph = Scene.Graph;
+        if (profile == null || graph == null || graph.Data == null) { result["error"] = "The graph is not ready."; return; }
+
+        string id = null;
+        if (!clear && !TryResolveNode(args.node, result, out id)) return;
+
+        if (!profile.ProfileNode(id, args.hops ?? profile.Hops, out string refusal) && refusal != null) {
+            result["error"] = refusal;
+            return;
+        }
+
+        GraphProfile now = graph.Profile;
+        if (now.IsNone) { result["profiled"] = null; return; }
+
+        var hops = graph.ProfileHops;
+        List<Holding> inside = graph.ProfileHoldings().OrderByDescending(h => h.Value).ToList();
+        result["profiled"] = graph.NameOf(now.root);
+        result["hops"] = now.hops;
+        result["reached"] = Enumerable.Range(1, now.hops).Select(hop => (object)new Dictionary<string, object> {
+            { "hop", hop },
+            { "nodes", hops.Where(kv => kv.Value == hop).Select(kv => graph.NameOf(kv.Key)).OrderBy(n => n).Take(25).Cast<object>().ToList() },
+            { "count", hops.Count(kv => kv.Value == hop) }
+        }).ToList();
+        result["holdingsInside"] = inside.Count;
+        result["valueInsideUsd"] = inside.Sum(h => h.Value);
+        if (hops.Values.Any(v => v > 0 && hops.Count(kv => kv.Value == v) > 25))
+            result["note"] = "Each hop lists at most 25 names; 'count' has them all.";
+    }
 }

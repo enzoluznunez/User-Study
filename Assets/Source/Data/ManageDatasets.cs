@@ -26,13 +26,10 @@ public class ManageDatasets : MonoBehaviour
         // answered yet; the result handler and Unload both clear the reader.
         public bool loading => source != null && !loaded;
 
-        // Listed from the industry index rather than scanned in: it stands in the
-        // rail from startup and is parsed the first time someone opens it, so a
-        // session begins with every industry named and none of them read.
-        public bool catalogued;
-        public int companies;
-
-        public readonly EditList Edits = new EditList();
+        // The sheet edits made on this dataset, kept here while another is open.
+        // Its hidden lines and order stay on its reader, so the edits that undo
+        // them have to stay with it too, and come back when it does.
+        public readonly List<Edit> sheetEdits = new List<Edit>();
     }
 
     private readonly List<Dataset> _datasets = new List<Dataset>();
@@ -44,22 +41,11 @@ public class ManageDatasets : MonoBehaviour
     // but left in the background.
     private Dataset _requested;
     private int _datasetsCreated;
-    private static readonly EditList Unowned = new EditList();
 
     public IReadOnlyList<Dataset> Datasets => _datasets;
     public int ActiveIndex => _active;
     public int DatasetCount => _datasets.Count;
     public DataSource Active => (_active >= 0 && _active < _datasets.Count) ? _datasets[_active].source : null;
-    public Dataset ActiveDataset => (_active >= 0 && _active < _datasets.Count) ? _datasets[_active] : null;
-
-    public static EditList ActiveEdits
-    {
-        get
-        {
-            Dataset d = Instance != null ? Instance.ActiveDataset : null;
-            return d != null ? d.Edits : Unowned;
-        }
-    }
 
     private void Awake()
     {
@@ -100,43 +86,6 @@ public class ManageDatasets : MonoBehaviour
         };
         _datasets.Add(dataset);
         SwitchDataset(_datasets.Count - 1);
-    }
-
-    // A dataset the app knows of but has not read. It is listed straight away and
-    // costs nothing until it is opened.
-    public void AddCatalogEntry(string file, string label, int companies)
-    {
-        if (AddCatalogEntryQuietly(file, label, companies)) OnDatasetsChanged?.Invoke();
-    }
-
-    // The rail is torn down and rebuilt on every change, so a whole index is
-    // listed in one go and announced once rather than once per industry.
-    public void AddCatalogEntries(IEnumerable<(string file, string label, int companies)> entries)
-    {
-        if (entries == null) return;
-
-        bool added = false;
-        foreach ((string file, string label, int companies) in entries)
-            added |= AddCatalogEntryQuietly(file, label, companies);
-
-        if (added) OnDatasetsChanged?.Invoke();
-    }
-
-    private bool AddCatalogEntryQuietly(string file, string label, int companies)
-    {
-        if (string.IsNullOrEmpty(file)) return false;
-
-        for (int i = 0; i < _datasets.Count; i++)
-            if (_datasets[i].payload == file) return false;
-
-        _datasets.Add(new Dataset
-        {
-            payload = file,
-            label = string.IsNullOrEmpty(label) ? Stylize(DeriveLabel(file, _datasets.Count)) : label,
-            catalogued = true,
-            companies = companies
-        });
-        return true;
     }
 
     private readonly Dictionary<Dataset, TaskCompletionSource<bool>> _awaitingLoad =
@@ -204,17 +153,6 @@ public class ManageDatasets : MonoBehaviour
 
         if (!ok)
         {
-            // An industry stays in the rail when its file will not read: it is
-            // still one of the industries, and trying again is a tap away.
-            if (dataset.catalogued)
-            {
-                Unload(dataset);
-                Notices.Show(this, "Industry Unavailable",
-                    reason ?? $"{dataset.label} could not be read.");
-                OnDatasetsChanged?.Invoke();
-                return;
-            }
-
             string payload = dataset.payload;
             RemoveDataset(index);
             OnDatasetLoadFailed?.Invoke(payload);
@@ -239,6 +177,9 @@ public class ManageDatasets : MonoBehaviour
         if (dataset == _requested) _requested = null;
 
         if (wasActive && sheetManager != null) sheetManager.CommitPendingGrabs();
+
+        // Its edits go with it: they would undo against whichever opens next.
+        if (wasActive) EditList.Active.DropView(ViewKind.Sheet);
 
         _datasets.RemoveAt(index);
         if (_active > index) _active--;
@@ -284,8 +225,21 @@ public class ManageDatasets : MonoBehaviour
         if (sheetManager != null) sheetManager.CommitPendingGrabs();
         if (toolManager != null) toolManager.DeselectTool();
 
+        // A sheet edit belongs to the dataset it was made on: the one closing
+        // takes its edits off the timeline and keeps them, and the one opening
+        // puts its own back. The graph's edits stay where they are.
+        if (_active >= 0)
+        {
+            Dataset leaving = _datasets[_active];
+            leaving.sheetEdits.Clear();
+            leaving.sheetEdits.AddRange(EditList.Active.FindAll(e => e.view == ViewKind.Sheet));
+            EditList.Active.DropView(ViewKind.Sheet);
+        }
+
         _active = index;
         Dataset next = _datasets[index];
+        EditList.Active.Restore(next.sheetEdits);
+        next.sheetEdits.Clear();
 
         Rebind(next);
         if (sheetManager != null) sheetManager.PlaySwitchGrow();
@@ -293,7 +247,7 @@ public class ManageDatasets : MonoBehaviour
 
         StateChannel.RecordState("dataset",
             $"the {(string.IsNullOrEmpty(next.label) ? "dataset" : next.label)} dataset is open" +
-            "; row and column numbers and edits all belong to it");
+            "; row and column numbers and the sheet's edits all belong to it");
 
         ReportAxes(next.source);
     }
@@ -338,7 +292,6 @@ public class ManageDatasets : MonoBehaviour
     private void Rebind(Dataset dataset)
     {
         TryStep("sheetManager", () => { if (sheetManager != null) sheetManager.SetDataSource(dataset.source); });
-        TryStep("replay", () => { if (sheetManager != null) sheetManager.ReplayEdits(dataset.Edits); });
     }
 
     private void TryStep(string label, Action step)

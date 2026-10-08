@@ -1,37 +1,56 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
-// Chooses what stands on the sheet, on either axis: which companies and which
-// metrics. A metric is one column group, so hiding one takes both of its years
-// off together, and a company is one row. The arrangement underneath is
-// untouched either way, so showing something again puts it back where the sort
-// left it.
+// Chooses what stands in the room, on whichever view it is used on.
 //
-// The panel shows one axis at a time. Neither is open to begin with, which is
-// not the same as nothing being filtered: the filter stands whether or not the
-// list that sets it is on screen.
+// On the bar sheet it hides companies (rows) and metrics (column groups). The
+// arrangement underneath is untouched, so showing something again puts it back
+// where the sort left it.
+//
+// On the network graph it has the same two lists: every investor (filer) and
+// every holding (security) on the graph, all switched on to begin with.
+// Switching an investor off hides it and its edges; the holdings it held stay
+// showing for as long as they are switched on. The amounts hide edges smaller
+// than a dollar value.
+//
+// The panel shows one list at a time. Neither view's list is open to begin
+// with, which is not the same as nothing being filtered: the filter stands
+// whether or not the list that sets it is on screen.
 public class FilterTool : Tool
 {
     protected override ToolType Kind => ToolType.Filter;
 
-    // A fingertip on a bar takes that bar's line off the sheet. Which line it is
-    // comes from the axis the panel has open, because one poke gives a point and
-    // not a direction: with the metrics open a poke takes the metric, with the
-    // companies open it takes the company.
     protected override bool UsesSheetEvents => true;
+    protected override bool UsesGraphEvents => true;
 
-    public enum Axis { None, Company, Metric }
+    public enum Pane { None, Company, Metric, Filers, Securities }
 
-    private Axis _open = Axis.None;
+    public static readonly long[] Thresholds = { 0, 10_000_000, 50_000_000, 100_000_000, 250_000_000 };
 
-    // One entry per metric: the data-space group it stands for, and the row that
-    // shows it. Kept together so the two can never fall out of step.
-    private readonly List<(int group, UIButton.Handle handle)> _metrics =
-        new List<(int, UIButton.Handle)>();
+    private static string ThresholdLabel(long value) => value == 0 ? "All" : $"${Formatter.Compact(value)}+";
 
-    // The same for companies, by data-space row.
-    private readonly List<(int row, UIButton.Handle handle)> _companies =
-        new List<(int, UIButton.Handle)>();
+    private const float ListHeight = 130f;
+    private const string SheetRowName = "AxisRow";
+    private const string GraphRowName = "GraphRow";
+    private const string AmountRowName = "AmountRow";
+    private const string ListName = "FilterList";
+
+    private Pane _open = Pane.None;
+    private Pane _openBuilt = Pane.None;
+    private bool _listStale;
+    private ButtonList _sheetRow;
+    private ButtonList _graphRow;
+    private ButtonList _amountRow;
+
+    // One entry per name the open list shows: whether the thing it names is
+    // showing, and the row that shows it, kept together so the two never fall
+    // out of step whichever view the list belongs to.
+    private readonly List<(System.Func<bool> showing, UIButton.Handle handle)> _rows =
+        new List<(System.Func<bool>, UIButton.Handle)>();
+
+    private static bool IsSheetPane(Pane pane) => pane == Pane.Company || pane == Pane.Metric;
+    private static bool IsGraphPane(Pane pane) => pane == Pane.Filers || pane == Pane.Securities;
 
     private DataSource _watched;
     private DataSource _builtFrom;
@@ -42,12 +61,22 @@ public class FilterTool : Tool
     {
         if (ManageDatasets.Instance != null)
             ManageDatasets.Instance.OnActiveDatasetChanged += OnDatasetChanged;
+        if (graph != null)
+        {
+            graph.OnGraphChanged += Rebuild;
+            graph.OnStateChanged += Light;
+        }
     }
 
     protected override void OnToolDestroy()
     {
         if (ManageDatasets.Instance != null)
             ManageDatasets.Instance.OnActiveDatasetChanged -= OnDatasetChanged;
+        if (graph != null)
+        {
+            graph.OnGraphChanged -= Rebuild;
+            graph.OnStateChanged -= Light;
+        }
         Watch(null);
     }
 
@@ -56,22 +85,23 @@ public class FilterTool : Tool
     protected override void OnActiveChanged(bool active)
     {
         if (active) Refresh();
+        else ClearHover();
     }
 
     // Undo All resets every tool: the filter it clears is the whole of this
-    // tool's state, so the sheet comes back whole.
+    // tool's state, so every view comes back whole.
     protected override void OnResetTool()
     {
         DataSource data = Data;
-        if (data == null) { Light(); return; }
-
-        bool metrics = data.ClearHiddenGroups();
-        bool companies = data.ClearHiddenRows();
-
-        if (metrics && companies) Report("put every company and every metric back on the sheet");
-        else if (metrics) Report("showed every metric again");
-        else if (companies) Report("showed every company again");
-
+        if (data != null)
+        {
+            bool metrics = data.ClearHiddenGroups();
+            bool companies = data.ClearHiddenRows();
+            if (metrics && companies) Report("put every company and every metric back on the sheet");
+            else if (metrics) Report("showed every metric again");
+            else if (companies) Report("showed every company again");
+        }
+        if (graph != null) graph.SetFilter(FilterState.Of(new string[0], 0), out _);
         Light();
     }
 
@@ -94,45 +124,64 @@ public class FilterTool : Tool
         }
     }
 
-    // The rows follow the dataset; their squares follow the filter, which an undo
+    // ----- The panel -----
+
+    private void Rebuild()
+    {
+        _listStale = true;
+        Refresh();
+    }
+
+    // The lists follow the data; their squares follow the filter, which an undo
     // or the assistant can change without going through this tool.
     private void Refresh()
     {
-        DataSource data = Data;
+        DataSource data = Views.Sheet ? Data : null;
         Watch(data);
+        if (toolPanelUI == null) return;
 
-        // Two datasets can hold the same number of metrics under different names,
-        // so the lists are rebuilt for a new source even when the counts match.
-        // A build that produced nothing counts as no build at all: the panel was
-        // not ready, and a later Refresh has to try again rather than read the
-        // empty lists as up to date.
-        bool built = _axisRow != null;
-        if (built && data == _builtFrom && _openBuilt == _open) { Light(); return; }
+        if (_sheetRow == null && _graphRow == null) BuildRows();
 
-        _builtFrom = data;
-        _openBuilt = _open;
-        _metrics.Clear();
-        _companies.Clear();
-
-        if (toolPanelUI == null) { _axisRow = null; return; }
-
-        // The two axes read as one choice, so they sit side by side above
-        // whatever they open. Neither starts lit: the list is what a press is
-        // for, and an unopened list is not an unfiltered one.
-        _axisRow = toolPanelUI.AddToggleRow(Kind, AxisRowName,
-            (CompanyButton, "By Company", () => OnAxisClicked(Axis.Company)),
-            (MetricButton, "By Metric", () => OnAxisClicked(Axis.Metric)));
-
-        BuildList(data);
-        LightAxis();
+        // Two datasets can hold the same number of lines under different names,
+        // so the list is rebuilt for a new source even when the counts match.
+        if (_listStale || _openBuilt != _open || data != _builtFrom) BuildList(data);
         Light();
-
         toolPanelUI.ContentChanged();
+    }
+
+    private void BuildRows()
+    {
+        if (Views.Sheet)
+            _sheetRow = toolPanelUI.AddToggleRow(Kind, SheetRowName,
+                ("ByCompany", "By Company", () => OnPaneClicked(Pane.Company)),
+                ("ByMetric", "By Metric", () => OnPaneClicked(Pane.Metric)));
+
+        if (Views.Graph)
+        {
+            _graphRow = toolPanelUI.AddToggleRow(Kind, GraphRowName,
+                ("Investors", "Investors", () => OnPaneClicked(Pane.Filers)),
+                ("Holdings", "Holdings", () => OnPaneClicked(Pane.Securities)));
+
+            var amounts = new (string, string, UnityEngine.Events.UnityAction)[Thresholds.Length];
+            for (int i = 0; i < Thresholds.Length; i++)
+            {
+                long value = Thresholds[i];
+                amounts[i] = ($"Amount_{i}", ThresholdLabel(value), () => OnAmountClicked(value));
+            }
+            _amountRow = toolPanelUI.AddToggleRow(Kind, AmountRowName, amounts);
+        }
     }
 
     private void BuildList(DataSource data)
     {
-        if (_open == Axis.None || data == null || !data.IsLoaded)
+        _openBuilt = _open;
+        _builtFrom = data;
+        _listStale = false;
+        _rows.Clear();
+
+        if ((IsSheetPane(_open) && (data == null || !data.IsLoaded)) ||
+            (IsGraphPane(_open) && (graph == null || graph.Data == null)) ||
+            _open == Pane.None)
         {
             toolPanelUI.RemoveContent(Kind, ListName);
             return;
@@ -141,45 +190,94 @@ public class FilterTool : Tool
         ButtonList list = toolPanelUI.AddCheckList(Kind, ListHeight, ListName);
         if (list == null) return;
 
-        if (_open == Axis.Metric)
-            foreach (int group in data.DataGroupsInOrder())
-                _metrics.Add((group, list.Add($"Metric_{group}",
-                    DataSource.GroupLabelOfData(data, group), () => OnLineClicked(false, group))));
-        else
-            foreach (int row in data.DataRowsInOrder())
-                _companies.Add((row, list.Add($"Company_{row}",
-                    DataSource.RowLabelOfData(data, row), () => OnLineClicked(true, row))));
+        switch (_open)
+        {
+            case Pane.Metric:
+                foreach (int group in data.DataGroupsInOrder())
+                    _rows.Add((() => !data.IsDataGroupHidden(group), list.Add($"Metric_{group}",
+                        DataSource.GroupLabelOfData(data, group), () => OnLineClicked(false, group))));
+                break;
+            case Pane.Company:
+                foreach (int row in data.DataRowsInOrder())
+                    _rows.Add((() => !data.IsRowHidden(row), list.Add($"Company_{row}",
+                        DataSource.RowLabelOfData(data, row), () => OnLineClicked(true, row))));
+                break;
+            case Pane.Filers:
+                foreach (Filer f in graph.DrawnFilers.OrderBy(f => f.Name, System.StringComparer.OrdinalIgnoreCase))
+                    _rows.Add((() => !graph.IsHidden(f.Id), list.Add($"Node_{f.Id}", f.Name, () => OnNodeClicked(f.Id))));
+                break;
+            case Pane.Securities:
+                foreach (Security s in graph.DrawnSecurities.OrderBy(s => s.DisplayName, System.StringComparer.OrdinalIgnoreCase))
+                    _rows.Add((() => !graph.IsHidden(s.Id), list.Add($"Node_{s.Id}", s.DisplayName, () => OnNodeClicked(s.Id))));
+                break;
+        }
     }
 
-    // Pressing the open axis closes it again, which leaves the filter exactly as
+    // Pressing the open list closes it again, which leaves the filter exactly as
     // it was: the list is a way of setting the filter, not the filter itself.
-    private void OnAxisClicked(Axis axis)
+    private void OnPaneClicked(Pane pane)
     {
-        _open = _open == axis ? Axis.None : axis;
+        _open = _open == pane ? Pane.None : pane;
         ClearTint();
         Refresh();
-        Report(_open == Axis.None
-            ? "closed the filter list"
-            : $"opened the list of {(_open == Axis.Company ? "companies" : "metrics")}");
+        Report(_open == Pane.None ? "closed the filter list" : $"opened the list of {PaneNoun(_open)}");
     }
+
+    private static string PaneNoun(Pane pane)
+    {
+        switch (pane)
+        {
+            case Pane.Company: return "companies";
+            case Pane.Metric: return "metrics";
+            case Pane.Filers: return "investors";
+            default: return "holdings";
+        }
+    }
+
+    // A square is filled while the thing it names is showing, so a list reads
+    // as what the view is showing rather than what has been taken off it.
+    private void Light()
+    {
+        if (_sheetRow != null)
+        {
+            UIButton.SetSelected(_sheetRow.At(0), _open == Pane.Company);
+            UIButton.SetSelected(_sheetRow.At(1), _open == Pane.Metric);
+        }
+        if (_graphRow != null)
+        {
+            UIButton.SetSelected(_graphRow.At(0), _open == Pane.Filers);
+            UIButton.SetSelected(_graphRow.At(1), _open == Pane.Securities);
+        }
+        if (_amountRow != null && graph != null)
+            for (int i = 0; i < Thresholds.Length; i++)
+                UIButton.SetSelected(_amountRow.At(i), graph.MinValue == Thresholds[i]);
+
+        foreach ((System.Func<bool> showing, UIButton.Handle handle) in _rows)
+            UIButton.SetChecked(handle, showing());
+    }
+
+    // ----- Poking the sheet -----
 
     // The line the finger is over, lit the way the Profile tool lights the line
     // it is about to raise, so a poke says what it will take before it takes it.
     protected override void OnSheetHover(ReadSheets.Reading reading)
     {
-        if (!Active || sheetManager == null || _open == Axis.None || !reading.valid)
+        if (!Active || sheetManager == null || !IsSheetPane(_open) || !reading.valid)
         {
             ClearTint();
             return;
         }
-
-        TintLine(reading, _open == Axis.Metric);
+        TintLine(reading, _open == Pane.Metric);
     }
 
     protected override void OnSheetCleared() => ClearTint();
 
-    // Leaving the tool leaves no line lit behind it.
-    protected override void ClearToolState() => ClearTint();
+    // Leaving the tool leaves nothing lit behind it.
+    protected override void ClearToolState()
+    {
+        ClearTint();
+        ClearHover();
+    }
 
     protected override void OnSheetRelease(ReadSheets.Reading reading) => ClearTint();
 
@@ -190,7 +288,7 @@ public class FilterTool : Tool
 
         // Without an axis open a poke has no line to mean, so it says so once
         // rather than guessing at the metric and taking the wrong thing off.
-        if (_open == Axis.None)
+        if (!IsSheetPane(_open))
         {
             Notices.Show(this, "Filter",
                 "Open By Company or By Metric to choose what a poke takes off the sheet.");
@@ -201,87 +299,25 @@ public class FilterTool : Tool
         if (data == null || !data.IsLoaded) return;
 
         string refusal;
-        bool done = _open == Axis.Metric
+        bool done = _open == Pane.Metric
             ? Toggle(false, data.DataGroupOf(reading.dataCol), out refusal)
             : Toggle(true, reading.dataRow, out refusal);
 
         if (!done && refusal != null) Notices.Show(this, "Filter", refusal);
     }
 
-    private void LightAxis()
+    // ----- Poking the graph -----
+
+    // A node needs no list open: one poke names one investor or holding.
+    protected override void OnNodeCommit(ReadGraph.Reading reading)
     {
-        if (_axisRow == null) return;
-        UIButton.SetSelected(_axisRow.At(0), _open == Axis.Company);
-        UIButton.SetSelected(_axisRow.At(1), _open == Axis.Metric);
+        ClearHover();
+        if (!Active || !reading.valid) return;
+        if (!ToggleNode(reading.node.Id, out string refusal) && refusal != null)
+            Notices.Show(this, "Filter", refusal);
     }
 
-    // The categories with at least one metric on this sheet, in contract order,
-    // each with the data groups it covers. A sheet opened with only the
-    // liquidity ratios shows one category button, not five.
-    private static List<KeyValuePair<string, List<int>>> CategoriesOnSheet(DataSource data)
-    {
-        var found = new List<KeyValuePair<string, List<int>>>();
-        if (data == null || !data.IsLoaded) return found;
-
-        List<int> groups = data.DataGroupsInOrder();
-
-        // Indexed by label once rather than rescanned per ratio: every category
-        // would otherwise walk every group, which is five passes over the sheet
-        // on each dataset switch.
-        var byTitle = new Dictionary<string, List<int>>(System.StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < groups.Count; i++)
-        {
-            string label = DataSource.GroupLabelOfData(data, groups[i]);
-            if (string.IsNullOrEmpty(label)) continue;
-            if (!byTitle.TryGetValue(label, out List<int> at))
-                byTitle[label] = at = new List<int>();
-            at.Add(groups[i]);
-        }
-
-        foreach (var category in FinancialsContract.MetricCategories)
-        {
-            var members = new List<int>();
-            foreach (string ratio in category.Value)
-                if (byTitle.TryGetValue(TitleOf(ratio), out List<int> at))
-                    members.AddRange(at);
-            if (members.Count > 0)
-                found.Add(new KeyValuePair<string, List<int>>(category.Key, members));
-        }
-        return found;
-    }
-
-    // 'working_capital' as the sheet spells it: 'Working Capital'. The same
-    // transform the server applies when it writes the header.
-    private static string TitleOf(string ratio)
-    {
-        string[] words = ratio.Split('_');
-        for (int i = 0; i < words.Length; i++)
-            if (words[i].Length > 0)
-                words[i] = char.ToUpperInvariant(words[i][0]) + words[i].Substring(1);
-        return string.Join(" ", words);
-    }
-
-    private const float ListHeight = 130f;
-    private const string AxisRowName = "AxisRow";
-    private const string ListName = "FilterList";
-    private const string CompanyButton = "ByCompany";
-    private const string MetricButton = "ByMetric";
-
-    private ButtonList _axisRow;
-    private Axis _openBuilt = Axis.None;
-
-    // A square is filled while the thing it names is on the sheet, so the list
-    // reads as what the sheet is showing rather than what has been taken off it.
-    private void Light()
-    {
-        DataSource data = Data;
-
-        foreach ((int group, UIButton.Handle handle) in _metrics)
-            UIButton.SetChecked(handle, data == null || !data.IsDataGroupHidden(group));
-
-        foreach ((int row, UIButton.Handle handle) in _companies)
-            UIButton.SetChecked(handle, data == null || !data.IsRowHidden(row));
-    }
+    // ----- The sheet's filter -----
 
     // A company is one row and a metric one column group; past that the two
     // axes filter the same way, so everything below takes the axis as 'rows'.
@@ -330,14 +366,14 @@ public class FilterTool : Tool
         if (!changed) return false;
 
         List<int> after = HiddenOf(data, rows);
-        ManageDatasets.ActiveEdits.PushFilter(before, after, rows);
+        EditList.Active.PushFilter(before, after, rows);
 
         Light();
-        Report(Describe(data, before, after, rows));
+        Report(DescribeSheet(data, before, after, rows));
         return true;
     }
 
-    private static string Describe(DataSource data, List<int> before, List<int> after, bool rows)
+    private static string DescribeSheet(DataSource data, List<int> before, List<int> after, bool rows)
     {
         var gone = new List<string>();
         var back = new List<string>();
@@ -370,29 +406,6 @@ public class FilterTool : Tool
         if (names.Count <= 3) return string.Join(", ", names);
         return $"{names.Count} {noun}s";
     }
-
-    // The data groups a category covers, or null when the name is not one. The
-    // assistant resolves 'the liquidity ratios' through this before it falls
-    // back to matching one metric by name.
-    public List<int> ResolveCategory(string query)
-    {
-        DataSource data = Data;
-        if (data == null || !data.IsLoaded || string.IsNullOrWhiteSpace(query)) return null;
-
-        string wanted = query.Trim();
-        foreach (var category in CategoriesOnSheet(data))
-            if (string.Equals(category.Key, wanted, System.StringComparison.OrdinalIgnoreCase))
-                return category.Value;
-        return null;
-    }
-
-    public List<string> CategoryNames()
-    {
-        var names = new List<string>();
-        foreach (var category in CategoriesOnSheet(Data)) names.Add(category.Key);
-        return names;
-    }
-
 
     // A company or metric by the name the user says, or by its 1-based place
     // among those on the sheet. Hidden ones answer to their names: they are what
@@ -442,5 +455,64 @@ public class FilterTool : Tool
 
         foreach (int id in InOrder(data, rows)) names.Add(Label(data, id, rows));
         return names;
+    }
+
+    // ----- The graph's filter -----
+
+    private void OnNodeClicked(string id)
+    {
+        if (!ToggleNode(id, out string refusal) && refusal != null) Notices.Show(this, "Filter", refusal);
+    }
+
+    private void OnAmountClicked(long value)
+    {
+        if (graph == null) return;
+        if (!ApplyGraph(FilterState.Of(graph.Hidden, value), out string refusal) && refusal != null)
+            Notices.Show(this, "Filter", refusal);
+        Light();
+    }
+
+    public bool ToggleNode(string id, out string refusal)
+    {
+        refusal = null;
+        if (graph == null) { refusal = "The graph is not ready."; return false; }
+
+        var hidden = new HashSet<string>(graph.Hidden);
+        if (!hidden.Remove(id)) hidden.Add(id);
+        return ApplyGraph(FilterState.Of(hidden, graph.MinValue), out refusal);
+    }
+
+    // The whole graph filter at once: one edit on the timeline however much it
+    // changes, so Undo puts the graph back the way one action found it.
+    public bool ApplyGraph(FilterState state, out string refusal)
+    {
+        refusal = null;
+        if (graph == null) { refusal = "The graph is not ready."; return false; }
+
+        FilterState before = graph.CurrentFilter;
+        if (!graph.SetFilter(state, out refusal)) return false;
+
+        EditList.Active.PushGraphFilter(before);
+        Light();
+        Report(DescribeGraph(before, graph.CurrentFilter));
+        return true;
+    }
+
+    private string DescribeGraph(FilterState before, FilterState after)
+    {
+        var gone = after.hidden.Where(id => !before.hidden.Contains(id)).Select(graph.NameOf).ToList();
+        var back = before.hidden.Where(id => !after.hidden.Contains(id)).Select(graph.NameOf).ToList();
+
+        var parts = new List<string>(3);
+        if (gone.Count > 0) parts.Add($"switched off {Summarize(gone, "node")}");
+        if (back.Count > 0) parts.Add($"switched {Summarize(back, "node")} back on");
+        if (after.minValue != before.minValue)
+            parts.Add(after.minValue == 0
+                ? "showed edges of every size"
+                : $"hid edges under {Formatter.Compact(after.minValue)} dollars");
+
+        string what = parts.Count > 0 ? string.Join(" and ", parts) : "left the graph as it was";
+        return $"{what}, leaving {graph.VisibleFilerCount} of {graph.DrawnFilers.Count} investors and {graph.VisibleSecurityCount} of " +
+               $"{graph.DrawnSecurities.Count} holdings switched on";
     }
 }
